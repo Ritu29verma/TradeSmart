@@ -1,18 +1,22 @@
-import './env.js'; 
+// index.js
+import './env.js';
 import express from "express";
 import { registerRoutes } from "./routes.js";
 import 'module-alias/register.js';
 import { initDb } from './db.js';
 import cors from 'cors';
+import serverless from "serverless-http";
 
 const app = express();
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cors({
-  origin: '*', 
+  origin: '*',
   credentials: true
 }));
 
+// Logging middleware
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
@@ -43,28 +47,31 @@ app.use((req, res, next) => {
   next();
 });
 
+// Initialize DB & routes
 (async () => {
   try {
-    await initDb(); 
-  const server = await registerRoutes(app);
+    await initDb();
+    await registerRoutes(app);
 
-  app.use((err, _req, res, _next) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
-    res.status(status).json({ message });
-    throw err;
-  });
+    // Error handler
+    app.use((err, _req, res, _next) => {
+      const status = err.status || err.statusCode || 500;
+      const message = err.message || "Internal Server Error";
+      res.status(status).json({ message });
+    });
 
-  const port = parseInt(process.env.PORT || "5000", 10);
-  server.listen({
-    port,
-    host: "0.0.0.0",
-    reusePort: true,
-  }, () => {
-    console.log(`serving on port ${port}`);
-  });
+    // If running locally, start the server
+    if (process.env.VERCEL !== '1') {
+      const port = parseInt(process.env.PORT || "5000", 10);
+      app.listen(port, () => {
+        console.log(`🚀 Server running locally on port ${port}`);
+      });
+    }
   } catch (err) {
     console.error('❌ Failed to start server:', err);
-    process.exit(1); 
+    process.exit(1);
   }
 })();
+
+// Export handler for Vercel
+export const handler = serverless(app);
