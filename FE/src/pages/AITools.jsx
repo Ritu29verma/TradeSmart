@@ -8,10 +8,10 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { 
-  Brain, 
-  TrendingUp, 
-  DollarSign, 
+import {
+  Brain,
+  TrendingUp,
+  DollarSign,
   BarChart3,
   Shield,
   Zap,
@@ -33,13 +33,21 @@ export default function AITools() {
 
   // Fetch user's products (for vendors)
   const { data: products } = useQuery({
-    queryKey: ["/api/products", { vendorId: user?.id }],
+    queryKey: ["products", { vendorId: user?.id }],
+    queryFn: async () => {
+      const res = await productAPI.getProducts({ vendorId: user.id });
+      return res.data; // ✅ extracts array from axios response
+    },
     enabled: !!user && user.role === "vendor",
   });
 
+  // console.log("Products from API:", products);
   // Price recommendation mutation
   const priceRecommendationMutation = useMutation({
-    mutationFn: aiAPI.getPriceRecommendation,
+    mutationFn: async (...args) => {
+      const res = await aiAPI.getPriceRecommendation(...args);
+      return res.data; // now FE gets only the parsed object
+    },
     onError: (error) => {
       toast({
         variant: "destructive",
@@ -49,9 +57,13 @@ export default function AITools() {
     },
   });
 
+
   // Demand forecast mutation
   const demandForecastMutation = useMutation({
-    mutationFn: aiAPI.getDemandForecast,
+    mutationFn:  async (...args) => {
+    const res = await aiAPI.getDemandForecast(...args);
+    return res.data;
+    },
     onError: (error) => {
       toast({
         variant: "destructive",
@@ -63,7 +75,10 @@ export default function AITools() {
 
   // Risk assessment mutation
   const riskAssessmentMutation = useMutation({
-    mutationFn: aiAPI.getRiskAssessment,
+    mutationFn:  async (...args) => {
+    const res = aiAPI.getRiskAssessment(...args);
+    return (await res).data;
+    },
     onError: (error) => {
       toast({
         variant: "destructive",
@@ -218,16 +233,17 @@ export default function AITools() {
                             <SelectValue placeholder="Choose a product to analyze" />
                           </SelectTrigger>
                           <SelectContent>
-                            {products?.map((product) => (
-                              <SelectItem key={product.id} value={product.id}>
-                                {product.name} - ${parseFloat(product.price).toLocaleString()}
+                            {Array.isArray(products) && products.map((product) => (
+                              <SelectItem key={product.id} value={String(product.id)}>
+                                {product.name} - ${Number(product.price || 0).toLocaleString()}
                               </SelectItem>
                             ))}
                           </SelectContent>
+
                         </Select>
                       </div>
-                      
-                      <Button 
+
+                      <Button
                         onClick={handlePriceRecommendation}
                         disabled={priceRecommendationMutation.isPending || !selectedProduct}
                         className="w-full"
@@ -272,39 +288,56 @@ export default function AITools() {
                         <div>
                           <p className="font-medium text-gray-900">Recommended Price</p>
                           <p className="text-2xl font-bold text-green-600">
-                            ${parseFloat(priceRecommendationMutation.data.recommendedPrice).toLocaleString()}
+                            ${priceRecommendationMutation.data?.recommendedPrice != null
+                              ? priceRecommendationMutation.data.recommendedPrice.toLocaleString()
+                              : "0"}
                           </p>
                         </div>
                         <div className="text-right">
                           <p className="text-sm text-gray-600">Change</p>
-                          <p className={`font-semibold ${
-                            priceRecommendationMutation.data.priceChangePercent > 0 ? 'text-green-600' : 'text-red-600'
-                          }`}>
-                            {priceRecommendationMutation.data.priceChangePercent > 0 ? '+' : ''}
-                            {priceRecommendationMutation.data.priceChangePercent.toFixed(1)}%
+                          <p
+                            className={`font-semibold ${(priceRecommendationMutation.data?.priceChangePercent ?? 0) > 0
+                                ? "text-green-600"
+                                : "text-red-600"
+                              }`}
+                          >
+                            {(priceRecommendationMutation.data?.priceChangePercent ?? 0) > 0 ? "+" : ""}
+                            {(priceRecommendationMutation.data?.priceChangePercent ?? 0).toFixed(1)}%
                           </p>
                         </div>
                       </div>
-                      
+
                       <div className="space-y-2">
                         <h4 className="font-medium text-gray-900">AI Analysis</h4>
-                        <p className="text-sm text-gray-700">{priceRecommendationMutation.data.reasoning}</p>
+                        <p className="text-sm text-gray-700">
+                          {priceRecommendationMutation.data?.reasoning ?? "No reasoning provided."}
+                        </p>
                       </div>
-                      
+
+                       <div className="space-y-2">
+                        <h4 className="font-medium text-gray-900">Market Analysis</h4>
+                        <p className="text-sm text-gray-700">
+                          {priceRecommendationMutation.data?.marketAnalysis ?? "No reasoning provided."}
+                        </p>
+                      </div>
+
                       <div className="flex items-center space-x-2">
                         <CheckCircle className="w-5 h-5 text-green-600" />
                         <span className="text-sm text-gray-700">
-                          Confidence: {Math.round(priceRecommendationMutation.data.confidence * 100)}%
+                          Confidence: {Math.round((priceRecommendationMutation.data?.confidence ?? 0) * 100)}%
                         </span>
                       </div>
                     </div>
                   ) : (
                     <div className="text-center py-8">
                       <TrendingUp className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                      <p className="text-gray-600">Select a product and click "Get Price Recommendation" to see AI analysis.</p>
+                      <p className="text-gray-600">
+                        Select a product and click "Get Price Recommendation" to see AI analysis.
+                      </p>
                     </div>
                   )}
                 </CardContent>
+
               </Card>
             </div>
           </TabsContent>
@@ -331,16 +364,18 @@ export default function AITools() {
                             <SelectValue placeholder="Choose a product to forecast" />
                           </SelectTrigger>
                           <SelectContent>
-                            {products?.map((product) => (
-                              <SelectItem key={product.id} value={product.id}>
-                                {product.name}
+                            {Array.isArray(products) && products.map((product) => (
+                              <SelectItem key={product.id} value={String(product.id)}>
+                                {product.name} - ${Number(product.price || 0).toLocaleString()}
                               </SelectItem>
                             ))}
                           </SelectContent>
+
+
                         </Select>
                       </div>
-                      
-                      <Button 
+
+                      <Button
                         onClick={handleDemandForecast}
                         disabled={demandForecastMutation.isPending || !selectedProduct}
                         className="w-full"
@@ -389,22 +424,22 @@ export default function AITools() {
                           </span>
                           <Badge variant={
                             demandForecastMutation.data.next30Days.trendDirection === "increasing" ? "default" :
-                            demandForecastMutation.data.next30Days.trendDirection === "decreasing" ? "destructive" : "secondary"
+                              demandForecastMutation.data.next30Days.trendDirection === "decreasing" ? "destructive" : "secondary"
                           }>
                             {demandForecastMutation.data.next30Days.trendDirection === "increasing" && <TrendingUp className="w-3 h-3 mr-1" />}
                             {demandForecastMutation.data.next30Days.trendDirection === "decreasing" && <TrendingDown className="w-3 h-3 mr-1" />}
                             {demandForecastMutation.data.next30Days.trendDirection}
                           </Badge>
                         </div>
-                        <Progress 
-                          value={demandForecastMutation.data.next30Days.confidence * 100} 
+                        <Progress
+                          value={demandForecastMutation.data.next30Days.confidence * 100}
                           className="mt-2"
                         />
                         <p className="text-xs text-gray-600 mt-1">
                           Confidence: {Math.round(demandForecastMutation.data.next30Days.confidence * 100)}%
                         </p>
                       </div>
-                      
+
                       <div className="space-y-2">
                         <h4 className="font-medium text-gray-900">Recommendations</h4>
                         <ul className="space-y-1">
@@ -453,8 +488,8 @@ export default function AITools() {
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                         />
                       </div>
-                      
-                      <Button 
+
+                      <Button
                         onClick={handleRiskAssessment}
                         disabled={riskAssessmentMutation.isPending || !selectedUser}
                         className="w-full"
@@ -495,17 +530,16 @@ export default function AITools() {
                     </div>
                   ) : riskAssessmentMutation.data ? (
                     <div className="space-y-4">
-                      <div className={`p-4 rounded-lg ${
-                        riskAssessmentMutation.data.riskLevel === "low" ? "bg-green-50" :
+                      <div className={`p-4 rounded-lg ${riskAssessmentMutation.data.riskLevel === "low" ? "bg-green-50" :
                         riskAssessmentMutation.data.riskLevel === "medium" ? "bg-yellow-50" : "bg-red-50"
-                      }`}>
+                        }`}>
                         <div className="flex items-center justify-between mb-2">
                           <h4 className="font-medium text-gray-900">Risk Level</h4>
                           <Badge variant={
                             riskAssessmentMutation.data.riskLevel === "low" ? "default" :
-                            riskAssessmentMutation.data.riskLevel === "medium" ? "outline" : "destructive"
+                              riskAssessmentMutation.data.riskLevel === "medium" ? "outline" : "destructive"
                           }>
-                            {riskAssessmentMutation.data.riskLevel.toUpperCase()}
+                            {riskAssessmentMutation.data?.riskLevel?.toUpperCase() || "N/A"}
                           </Badge>
                         </div>
                         <div className="flex items-center space-x-4">
@@ -523,7 +557,7 @@ export default function AITools() {
                           </div>
                         </div>
                       </div>
-                      
+
                       {riskAssessmentMutation.data.riskFactors.length > 0 && (
                         <div className="space-y-2">
                           <h4 className="font-medium text-gray-900">Risk Factors</h4>

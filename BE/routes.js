@@ -586,8 +586,9 @@ app.post("/api/quotes/:id/accept", authenticateToken, requireRole(['buyer']), as
 
       res.json({ negotiation: updatedNegotiation, aiResponse });
     } catch (error) {
-      res.status(500).json({ message: error.message });
-    }
+    console.error("Negotiation API error:", error);
+    res.status(500).json({ message: error.message || "Failed to process negotiation" });
+  }
   });
 
   app.post("/api/negotiations/:id/accept", authenticateToken, async (req, res) => {
@@ -623,10 +624,7 @@ app.post("/api/quotes/:id/accept", authenticateToken, requireRole(['buyer']), as
   // AI Tools routes
 
 // route handler
-app.post(
-  "/api/ai/price-recommendation",
-  authenticateToken,
-  requireRole(["vendor"]),
+app.post("/api/ai/price-recommendation", authenticateToken, requireRole(["vendor"]),
   async (req, res) => {
     try {
       const { productId } = req.body;
@@ -686,7 +684,6 @@ app.post(
   }
 );
 
-
   app.post("/api/ai/demand-forecast", authenticateToken, requireRole(['vendor']), async (req, res) => {
     try {
       const { productId } = req.body;
@@ -699,9 +696,14 @@ app.post(
       const priceHistory = await storage.getPriceHistory(productId);
       const forecast = await aiService.forecastDemand(product, priceHistory);
       res.json(forecast);
-    } catch (error) {
-      res.status(500).json({ message: error.message });
-    }
+   } catch (error) {
+  console.error("Error forecasting demand:", error?.message, error?.response?.data || error);
+  return res.status(500).json({
+    message: "Failed to generate demand forecast",
+    detail: error?.message || "Unknown error",
+    raw: error?.response?.data || null
+  });
+}
   });
 
   app.post("/api/ai/risk-assessment", authenticateToken, requireRole(['admin', 'vendor']), async (req, res) => {

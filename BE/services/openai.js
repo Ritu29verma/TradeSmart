@@ -1,15 +1,60 @@
-import OpenAI from "openai";
+// import OpenAI from "openai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
-const openai = new OpenAI({ 
-  apiKey: process.env.OPENAI_API_KEY ,
+const gemini = new GoogleGenerativeAI({ 
+  apiKey: process.env.GEMINI_API_KEY ,
 });
-if (!process.env.OPENAI_API_KEY) {
-  throw new Error("OPENAI_API_KEY is not set");
+if (!process.env.GEMINI_API_KEY) {
+  throw new Error("GEMINI_API_KEY is not set");
 }
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+function extractJsonFromText(text) {
+  if (!text || typeof text !== "string") return null;
+  let s = text.trim();
+
+  // 1) If there's a triple-backtick fenced block (```json ... ``` or ``` ... ```), prefer its inner content.
+  const fenced = s.match(/```(?:json)?\n?([\s\S]*?)```/i);
+  if (fenced && fenced[1]) {
+    const candidate = fenced[1].trim();
+    try {
+      return JSON.parse(candidate);
+    } catch (e) {
+      // fall through and try other extraction strategies on candidate
+      s = candidate;
+    }
+  }
+
+  // 2) Remove any leading/trailing single backticks or markdown markers and try again.
+  s = s.replace(/^```json\s*/i, "").replace(/```$/i, "").trim();
+
+  // 3) Find the first balanced JSON object-like substring using a non-greedy match.
+  const firstJson = s.match(/\{[\s\S]*?\}/);
+  if (firstJson) {
+    try {
+      return JSON.parse(firstJson[0]);
+    } catch (e) {
+      // continue to next strategy
+    }
+  }
+
+  // 4) Fall back: take substring from first '{' to last '}' and try parsing
+  const firstOpen = s.indexOf("{");
+  const lastClose = s.lastIndexOf("}");
+  if (firstOpen !== -1 && lastClose !== -1 && lastClose > firstOpen) {
+    const candidate = s.slice(firstOpen, lastClose + 1);
+    try {
+      return JSON.parse(candidate);
+    } catch (e) {
+      // nothing more to try
+    }
+  }
+
+  return null;
 }
 
 export class AIService {
@@ -65,9 +110,11 @@ Ensure the output is valid JSON and nothing else.`;
       return await fn();
     } catch (e) {
       lastErr = e;
-      if (e?.error?.code === "insufficient_quota") {
-        throw e;
-      }
+      const isQuota = (e?.message || "").toLowerCase().includes("quota") || e?.status === 429;
+          if (isQuota && (e?.message || "").toLowerCase().includes("free_tier")) {
+            // bail on free-tier quota exhaustion
+            throw e;
+          }
 
       // Only retry on transient 429s or network-ish failures
       const isRateLimit = e?.status === 429;
@@ -86,40 +133,38 @@ Ensure the output is valid JSON and nothing else.`;
   };
 
   try {
-    const rawResponse = await withRetries(() =>
-      openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are an expert pricing analyst for B2B marketplaces. Provide data-driven pricing recommendations based on market conditions, demand, and competitive analysis.",
+     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const rawResponse = await withRetries(async () =>{
+     const result = await model.generateContent({
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: prompt }],
+            },
+          ],
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 500,
           },
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
-        temperature: 0.7,
-        max_tokens: 500,
-      })
-    );
+        });
+        return result;
+      });
 
-    const content = rawResponse?.choices?.[0]?.message?.content;
-    if (!content) {
-      throw new Error("Empty response from model");
-    }
+          const content = rawResponse?.response?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!content) {
+        throw new Error("Empty response from Gemini");
+      }
 
-    // Try to extract JSON object from possibly noisy output
-    let parsed;
-    try {
-      const match = content.match(/\{[\s\S]*\}$/); // greedy to end
-      const jsonText = match ? match[0] : content;
-      parsed = JSON.parse(jsonText);
-    } catch (e) {
-      console.warn("[PriceRec] failed to parse model output as JSON:", content);
-      throw new Error("Model output could not be parsed as valid JSON");
-    }
+         if (process.env.NODE_ENV === "development") {
+        console.log("[AIService] raw model output:", content);
+        console.log("[AIService] token usage (if available):", rawResponse?.response?.usage ?? rawResponse?.usage);
+      }
+      const parsed = extractJsonFromText(content);
+      if (!parsed) {
+        console.warn("[PriceRec] failed to parse model output as JSON (after sanitization):", content);
+        throw new Error("Model output could not be parsed as valid JSON");
+      }
 
     const normalizeNumber = (val, fallback = null) => {
         if (typeof val === "number") return val;
@@ -184,12 +229,11 @@ Ensure the output is valid JSON and nothing else.`;
   }
 }
 
+async negotiatePrice(negotiationContext) {
+  try {
+    const { product, currentOffer, buyerMessage, negotiationHistory } = negotiationContext;
 
-  async negotiatePrice(negotiationContext) {
-    try {
-      const { product, currentOffer, buyerMessage, negotiationHistory } = negotiationContext;
-      
-      const prompt = `You are an AI negotiation assistant for a B2B marketplace. Help negotiate the best price for both parties.
+    const prompt = `You are an AI negotiation assistant for a B2B marketplace. Help negotiate the best price for both parties.
 
 Product Details:
 - Name: ${product.name}
@@ -210,32 +254,37 @@ Provide a negotiation response in JSON format:
   "marketJustification": "Market-based reasoning for the price"
 }`;
 
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [
-          {
-            role: "system",
-            content: "You are a professional B2B negotiation assistant. Be helpful, fair, and aim for win-win outcomes. Use market data and business logic in your negotiations."
-          },
-          {
-            role: "user",
-            content: prompt
-          }
-        ],
-        response_format: { type: "json_object" },
-        temperature: 0.8
-      });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const result = await model.generateContent({
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.8,
+        maxOutputTokens: 500,
+      },
+    });
 
-      return JSON.parse(response.choices[0].message.content);
-    } catch (error) {
-      console.error('Error in price negotiation:', error);
-      throw new Error('Failed to process negotiation');
+    const content = result.response?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!content) {
+      throw new Error("Empty response from Gemini API");
     }
-  }
 
-  async forecastDemand(productData, historicalData = []) {
-    try {
-      const prompt = `Analyze the following product and historical data to forecast demand:
+    // Extract JSON from response
+    const jsonStart = content.indexOf("{");
+    const jsonEnd = content.lastIndexOf("}");
+    const cleanJson = content.slice(jsonStart, jsonEnd + 1);
+
+    return JSON.parse(cleanJson);
+  } catch (error) {
+    console.error("Error in price negotiation:", error);
+    throw new Error("Failed to process negotiation");
+  }
+}
+
+async forecastDemand(productData, historicalData = []) {
+  try {
+    const prompt = `
+Analyze the following product and historical data to forecast demand.
+Return ONLY valid JSON, no extra text:
 
 Product: ${productData.name}
 Category: ${productData.categoryId}
@@ -245,48 +294,50 @@ Price: $${productData.price}
 
 Historical Data: ${JSON.stringify(historicalData)}
 
-Provide demand forecast in JSON format:
+JSON format:
 {
   "next30Days": {
     "estimatedDemand": number,
     "confidence": number,
     "trendDirection": "increasing" | "decreasing" | "stable"
   },
-  "seasonalFactors": "string describing seasonal impacts",
+  "seasonalFactors": "string",
   "recommendations": [
-    "actionable recommendations for inventory and pricing"
+    "string"
   ],
   "riskFactors": [
-    "potential risks that could affect demand"
+    "string"
   ]
-}`;
+}
+    `;
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const result = await model.generateContent(prompt);
 
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [
-          {
-            role: "system",
-            content: "You are a demand forecasting expert specializing in B2B markets. Provide accurate, data-driven forecasts with actionable insights."
-          },
-          {
-            role: "user",
-            content: prompt
-          }
-        ],
-        response_format: { type: "json_object" },
-        temperature: 0.6
-      });
+    const text = result.response.text();
 
-      return JSON.parse(response.choices[0].message.content);
-    } catch (error) {
-      console.error('Error forecasting demand:', error);
-      throw new Error('Failed to generate demand forecast');
-    }
+    // Try parsing JSON
+    const jsonStart = text.indexOf("{");
+    const jsonEnd = text.lastIndexOf("}");
+    const cleanJson = text.slice(jsonStart, jsonEnd + 1);
+
+    return JSON.parse(cleanJson);
+  } catch (error) {
+    console.error("Error forecasting demand:", error?.message, error?.response?.data || error);
+
+    // Pass the real message and raw Gemini output to caller
+    throw {
+      message: error?.message || "Unknown error",
+      raw: error?.response?.data || null
+    };
   }
+}
 
-  async generateRiskAssessment(userProfile, transactionHistory = []) {
-    try {
-      const prompt = `Assess the risk profile for this B2B marketplace user:
+async generateRiskAssessment(userProfile, transactionHistory = []) {
+  try {
+    const prompt = `
+Assess the risk profile for this B2B marketplace user.
+Return ONLY valid JSON, no extra text.
 
 User Profile:
 - Role: ${userProfile.role}
@@ -296,42 +347,42 @@ User Profile:
 
 Transaction History: ${JSON.stringify(transactionHistory)}
 
-Provide risk assessment in JSON format:
+JSON format:
 {
-  "riskScore": number (0-100, where 0 is lowest risk),
+  "riskScore": number,
   "riskLevel": "low" | "medium" | "high",
-  "riskFactors": [
-    "specific risk factors identified"
-  ],
-  "recommendations": [
-    "recommended actions to mitigate risks"
-  ],
-  "creditworthiness": "assessment of financial reliability",
-  "trustScore": number (0-100)
-}`;
+  "riskFactors": ["string"],
+  "recommendations": ["string"],
+  "creditworthiness": "string",
+  "trustScore": number
+}
+    `;
 
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [
-          {
-            role: "system",
-            content: "You are a risk assessment expert for B2B transactions. Evaluate users fairly and provide actionable risk mitigation strategies."
-          },
-          {
-            role: "user",
-            content: prompt
-          }
-        ],
-        response_format: { type: "json_object" },
-        temperature: 0.5
-      });
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const result = await model.generateContent(prompt);
 
-      return JSON.parse(response.choices[0].message.content);
-    } catch (error) {
-      console.error('Error generating risk assessment:', error);
-      throw new Error('Failed to generate risk assessment');
+    const text = result.response.text();
+
+    if (!text.includes("{")) {
+      throw new Error("Gemini returned no JSON. Raw response: " + text);
     }
-  }
+
+    const jsonStart = text.indexOf("{");
+    const jsonEnd = text.lastIndexOf("}");
+    const cleanJson = text.slice(jsonStart, jsonEnd + 1);
+
+    return JSON.parse(cleanJson);
+
+  } catch (error) {
+  console.error("Error generating risk assessment:");
+  console.error("Message:", error.message);
+  console.error("Stack:", error.stack);
+  console.error("Full error object:", JSON.stringify(error, null, 2));
+  throw new Error("Failed to generate risk assessment");
+}
+}
+
 }
 
 export const aiService = new AIService();

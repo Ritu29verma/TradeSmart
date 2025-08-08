@@ -47,10 +47,12 @@ export default function Profile() {
   const user = authManager.getUser();
 
   // Fetch current user data
-  const { data: currentUser, isLoading } = useQuery({
-    queryKey: ["/api/auth/me"],
-    enabled: !!user,
-  });
+const { data: currentUser, isLoading } = useQuery({
+  queryKey: ["/api/auth/me"],
+  queryFn: authAPI.getMe,
+  enabled: !!user,
+});
+console.log(currentUser) 
 
   // Update profile mutation
   const updateProfileMutation = useMutation({

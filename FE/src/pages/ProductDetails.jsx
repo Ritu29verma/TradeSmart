@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -35,10 +35,21 @@ export default function ProductDetails() {
   const user = authManager.getUser();
 
   // Fetch product details
-  const { data: product, isLoading: productLoading } = useQuery({
-    queryKey: ["/api/products", id],
-    enabled: !!id,
-  });
+const { data: product, isLoading: productLoading } = useQuery({
+  queryKey: ["/api/products", id],
+  queryFn: async () => {
+    const res = await productAPI.getProduct(id);
+    return res.data;
+  },
+  enabled: !!id,
+});
+
+useEffect(() => {
+  if (product) {
+    console.log("Fetched product:", product);
+  }
+}, [product]);
+
 
   // Start negotiation mutation
   const startNegotiationMutation = useMutation({
