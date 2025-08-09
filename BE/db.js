@@ -13,6 +13,8 @@ export async function initDb() {
 
   const client = new Client({
     connectionString: process.env.DATABASE_URL,
+     ssl: { rejectUnauthorized: false },
+     keepAlive: true,
   });
 
   try {

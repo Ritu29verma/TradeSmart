@@ -83,6 +83,7 @@ export default function VendorDashboard() {
         price: "",
         originalPrice: "",
         categoryId: "",
+        categoryName: "",
         minOrderQuantity: "1",
         stockQuantity: "",
         specifications: "",
@@ -103,19 +104,19 @@ export default function VendorDashboard() {
   });
 
   // Fetch vendor's RFQs
-  const { data: rfqs, isLoading: rfqsLoading, error: rfqsError  } = useQuery({
+  const { data: rfqs, isLoading: rfqsLoading, error: rfqsError } = useQuery({
     queryKey: ['vendor-rfqs', user?.id],
     queryFn: () => rfqAPI.getRfqs().then(res => res.data)
-        .then(all => {
-          return all.filter(rfq => {
-            return true;
-          });
-        }),
+      .then(all => {
+        return all.filter(rfq => {
+          return true;
+        });
+      }),
     enabled: !!user?.id,
   });
 
   // Fetch vendor's Orders
-  const { data: orders, isLoading: ordersLoading,error: ordersError,} = useQuery({
+  const { data: orders, isLoading: ordersLoading, error: ordersError, } = useQuery({
     queryKey: ['vendor-orders', user?.id],
     queryFn: () =>
       orderAPI.getOrders().then(res => res.data)
@@ -127,11 +128,11 @@ export default function VendorDashboard() {
   });
 
   //incoming Rfqs
- const {data: incomingRfqs,isLoading, error} = useQuery({
-  queryKey: ["incoming-rfqs"],
-  queryFn: () => rfqAPI.incomingRfqs().then(res => res.data),
-  enabled: !!user && user.role === "vendor",
-});
+  const { data: incomingRfqs, isLoading, error } = useQuery({
+    queryKey: ["incoming-rfqs"],
+    queryFn: () => rfqAPI.incomingRfqs().then(res => res.data),
+    enabled: !!user && user.role === "vendor",
+  });
 
   const createQuoteMutation = useMutation({
     mutationFn: ({ rfqId, quote }) => rfqAPI.createQuote(rfqId, quote).then((r) => r.data),
@@ -261,7 +262,7 @@ export default function VendorDashboard() {
             <TabsTrigger value="products">Products</TabsTrigger>
             <TabsTrigger value="orders">Orders</TabsTrigger>
             <TabsTrigger value="rfqs">RFQs</TabsTrigger>
-              <TabsTrigger value="incoming-rfqs">IncomingRFQs</TabsTrigger>
+            <TabsTrigger value="incoming-rfqs">IncomingRFQs</TabsTrigger>
             <TabsTrigger value="analytics">Analytics</TabsTrigger>
           </TabsList>
 
@@ -294,7 +295,14 @@ export default function VendorDashboard() {
                         <Label htmlFor="categoryId">Category</Label>
                         <Select
                           value={productForm.categoryId}
-                          onValueChange={(value) => setProductForm(prev => ({ ...prev, categoryId: value }))}
+                          onValueChange={(value) => {
+                            const selectedCategory = categories?.find((cat) => cat.id === value);
+                            setProductForm((prev) => ({
+                              ...prev,
+                              categoryId: value,
+                              categoryName: selectedCategory ? selectedCategory.name : "" // ✅ store name too
+                            }));
+                          }}
                         >
                           <SelectTrigger>
                             <SelectValue placeholder="Select category" />
@@ -452,43 +460,43 @@ export default function VendorDashboard() {
 
           <TabsContent value="incoming-rfqs">
             <Card>
-               <CardHeader>
+              <CardHeader>
                 <CardTitle>IncomingRFQs</CardTitle>
               </CardHeader>
               <CardContent>
-               <div className="space-y-4">
-      {isLoading ? (
-        <Skeleton className="h-32 w-full" />
-      ) : error ? (
-        <div className="text-red-500">Failed to load RFQs</div>
-      ) : incomingRfqs?.length ? (
-        incomingRfqs.map((rfq) => (
-          <Card key={rfq.id}>
-            <CardHeader className="flex justify-between items-start">
-              <div>
-                <CardTitle>{rfq.title}</CardTitle>
-                <p className="text-sm text-gray-500 mt-1">
-                  Quantity: {rfq.quantity} | Target Price: {rfq.targetPrice} | Deadline:{" "}
-                  {rfq.deadline ? new Date(rfq.deadline).toLocaleDateString() : "—"}
-                </p>
-              </div>
-              <QuoteDialog
-                rfq={rfq}
-                onSubmit={(quotePayload) =>
-                  createQuoteMutation.mutate({ rfqId: rfq.id, quote: quotePayload })
-                }
-                disabled={createQuoteMutation.isPending}
-              />
-            </CardHeader>
-            <CardContent>
-              <p>{rfq.description}</p>
-            </CardContent>
-          </Card>
-        ))
-      ) : (
-        <div>No incoming RFQs tied to your products.</div>
-      )}
-    </div>
+                <div className="space-y-4">
+                  {isLoading ? (
+                    <Skeleton className="h-32 w-full" />
+                  ) : error ? (
+                    <div className="text-red-500">Failed to load RFQs</div>
+                  ) : incomingRfqs?.length ? (
+                    incomingRfqs.map((rfq) => (
+                      <Card key={rfq.id}>
+                        <CardHeader className="flex justify-between items-start">
+                          <div>
+                            <CardTitle>{rfq.title}</CardTitle>
+                            <p className="text-sm text-gray-500 mt-1">
+                              Quantity: {rfq.quantity} | Target Price: {rfq.targetPrice} | Deadline:{" "}
+                              {rfq.deadline ? new Date(rfq.deadline).toLocaleDateString() : "—"}
+                            </p>
+                          </div>
+                          <QuoteDialog
+                            rfq={rfq}
+                            onSubmit={(quotePayload) =>
+                              createQuoteMutation.mutate({ rfqId: rfq.id, quote: quotePayload })
+                            }
+                            disabled={createQuoteMutation.isPending}
+                          />
+                        </CardHeader>
+                        <CardContent>
+                          <p>{rfq.description}</p>
+                        </CardContent>
+                      </Card>
+                    ))
+                  ) : (
+                    <div>No incoming RFQs tied to your products.</div>
+                  )}
+                </div>
               </CardContent>
             </Card>
           </TabsContent>

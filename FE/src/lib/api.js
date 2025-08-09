@@ -45,6 +45,7 @@ export const authAPI = {
 // User API
 export const userAPI = {
   updateProfile: (updates) => api.put('/users/profile', updates),
+  getUsers: (params) => api.get('/users', { params }),
 };
 
 // Product API
@@ -60,6 +61,8 @@ export const productAPI = {
 export const categoryAPI = {
   getCategories: () => api.get('/categories'),
   createCategory: (category) => api.post('/categories', category),
+  updateCategory: (id, category) => api.put(`/categories/${id}`, category),
+  deleteCategory: (id) => api.delete(`/categories/${id}`),
 };
 
 // RFQ API

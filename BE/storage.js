@@ -54,11 +54,17 @@ export class DatabaseStorage {
   async verifyPassword(email, password) {
     const user = await this.getUserByEmail(email);
     if (!user || !user.password) return null;
-    
+
     const isValid = await bcrypt.compare(password, user.password);
     return isValid ? user : null;
   }
 
+  async getUsersByRoles(roles) {
+    const db = getDb();
+    return await db.query.users.findMany({
+      where: (users, { inArray }) => inArray(users.role, roles),
+    });
+  }
   // Category operations
   async getCategories() {
     return await db.select().from(categories).orderBy(asc(categories.name));
@@ -72,26 +78,44 @@ export class DatabaseStorage {
     return category;
   }
 
+  async updateCategory(id, name, description, parentId) {
+    const [category] = await db
+      .update(categories)
+      .set({ name, description, parentId: parentId || null, updatedAt: new Date(), })
+      .where(eq(categories.id, id))
+      .returning();
+    return category;
+  }
+
+  async deleteCategory(id) {
+    const deleted = await db.delete(categories).where(eq(categories.id, id)).returning();
+    return deleted.length > 0;
+  }
+
   // Product operations
   async getProducts(filters = {}) {
     let query = db.select().from(products);
-    
+
     if (filters.categoryId) {
       query = query.where(eq(products.categoryId, filters.categoryId));
     }
-    
+
+    if (filters.categoryName) {
+      query = query.where(eq(products.categoryName, filters.categoryName));
+    }
+
     if (filters.vendorId) {
       query = query.where(eq(products.vendorId, filters.vendorId));
     }
-    
+
     if (filters.search) {
       query = query.where(ilike(products.name, `%${filters.search}%`));
     }
-    
+
     if (filters.isActive !== undefined) {
       query = query.where(eq(products.isActive, filters.isActive));
     }
-    
+
     return await query.orderBy(desc(products.createdAt));
   }
 
@@ -131,24 +155,24 @@ export class DatabaseStorage {
   // RFQ operations
   async getRfqs(filters = {}) {
     let query = db.select().from(rfqs);
-    
+
     if (filters.buyerId) {
       query = query.where(eq(rfqs.buyerId, filters.buyerId));
     }
-    
+
     if (filters.status) {
       query = query.where(eq(rfqs.status, filters.status));
     }
-    
-      if (filters.productId) {
-    if (Array.isArray(filters.productId)) {
-      // query = query.where(rfqs.productId.in(filters.productId));
-      const conditions = filters.productId.map(id => eq(rfqs.productId, id));
-      query = query.where(or(...conditions));
-    } else if (!Array.isArray(filters.productId)) {
-      query = query.where(eq(rfqs.productId, filters.productId));
+
+    if (filters.productId) {
+      if (Array.isArray(filters.productId)) {
+        // query = query.where(rfqs.productId.in(filters.productId));
+        const conditions = filters.productId.map(id => eq(rfqs.productId, id));
+        query = query.where(or(...conditions));
+      } else if (!Array.isArray(filters.productId)) {
+        query = query.where(eq(rfqs.productId, filters.productId));
+      }
     }
-  }
 
     return await query.orderBy(desc(rfqs.createdAt));
   }
@@ -181,18 +205,18 @@ export class DatabaseStorage {
   }
 
   async getQuote(id) {
-  const [quote] = await db.select().from(quotes).where(eq(quotes.id, id));
-  return quote || undefined;
-}
+    const [quote] = await db.select().from(quotes).where(eq(quotes.id, id));
+    return quote || undefined;
+  }
 
   async getQuotesByVendor(vendorId) {
     return await db.select().from(quotes).where(eq(quotes.vendorId, vendorId)).orderBy(desc(quotes.createdAt));
   }
 
   async updateQuote(id, data) {
-  const [quote] = await db.update(quotes).set(data).where(eq(quotes.id, id)).returning();
-  return quote;
-}
+    const [quote] = await db.update(quotes).set(data).where(eq(quotes.id, id)).returning();
+    return quote;
+  }
 
   async createQuote(insertQuote) {
     const [quote] = await db
@@ -202,35 +226,35 @@ export class DatabaseStorage {
     return quote;
   }
 
-async acceptQuote(id) {
-  const existing = await this.getQuote(id);
-  if (!existing) return null;
-  if (existing.isAccepted) return existing; // or throw if you prefer
+  async acceptQuote(id) {
+    const existing = await this.getQuote(id);
+    if (!existing) return null;
+    if (existing.isAccepted) return existing; // or throw if you prefer
 
-  const [quote] = await db
-    .update(quotes)
-    .set({ isAccepted: true })
-    .where(eq(quotes.id, id))
-    .returning();
-  return quote;
-}
+    const [quote] = await db
+      .update(quotes)
+      .set({ isAccepted: true })
+      .where(eq(quotes.id, id))
+      .returning();
+    return quote;
+  }
 
   // Order operations
   async getOrders(filters = {}) {
     let query = db.select().from(orders);
-    
+
     if (filters.buyerId) {
       query = query.where(eq(orders.buyerId, filters.buyerId));
     }
-    
+
     if (filters.vendorId) {
       query = query.where(eq(orders.vendorId, filters.vendorId));
     }
-    
+
     if (filters.status) {
       query = query.where(eq(orders.status, filters.status));
     }
-    
+
     return await query.orderBy(desc(orders.createdAt));
   }
 
@@ -260,23 +284,23 @@ async acceptQuote(id) {
   // Negotiation operations
   async getNegotiations(filters = {}) {
     let query = db.select().from(negotiations);
-    
+
     if (filters.buyerId) {
       query = query.where(eq(negotiations.buyerId, filters.buyerId));
     }
-    
+
     if (filters.vendorId) {
       query = query.where(eq(negotiations.vendorId, filters.vendorId));
     }
-    
+
     if (filters.productId) {
       query = query.where(eq(negotiations.productId, filters.productId));
     }
-    
+
     if (filters.isActive !== undefined) {
       query = query.where(eq(negotiations.isActive, filters.isActive));
     }
-    
+
     return await query.orderBy(desc(negotiations.updatedAt));
   }
 
@@ -309,13 +333,13 @@ async acceptQuote(id) {
   async addNegotiationMessage(id, message) {
     const negotiation = await this.getNegotiation(id);
     if (!negotiation) return null;
-    
+
     const messages = negotiation.messages || [];
     messages.push({
       ...message,
       timestamp: new Date().toISOString()
     });
-    
+
     return await this.updateNegotiation(id, { messages });
   }
 
@@ -344,7 +368,7 @@ async acceptQuote(id) {
       .where(and(eq(products.vendorId, vendorId), eq(products.isActive, true)));
 
     const [orderStats] = await db
-      .select({ 
+      .select({
         count: count(),
         total: sql`COALESCE(SUM(${orders.totalAmount}), 0)`
       })
@@ -367,7 +391,7 @@ async acceptQuote(id) {
 
   async getBuyerStats(buyerId) {
     const [orderStats] = await db
-      .select({ 
+      .select({
         count: count(),
         total: sql`COALESCE(SUM(${orders.totalAmount}), 0)`
       })
@@ -389,7 +413,7 @@ async acceptQuote(id) {
   async getAdminStats() {
     const [userStats] = await db.select({ count: count() }).from(users);
     const [productStats] = await db.select({ count: count() }).from(products);
-    const [orderStats] = await db.select({ 
+    const [orderStats] = await db.select({
       count: count(),
       total: sql`COALESCE(SUM(${orders.totalAmount}), 0)`
     }).from(orders);

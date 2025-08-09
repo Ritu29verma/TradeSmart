@@ -41,6 +41,16 @@ export async function registerRoutes(app) {
     }
   });
 
+  // Get all users with role vendor or buyer
+app.get("/api/users", authenticateToken, async (req, res) => {
+  try {
+    const users = await storage.getUsersByRoles(["vendor", "buyer"]);
+    res.json(users.map(user => ({ ...user, password: undefined }))); // hide password
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
   app.post("/api/auth/login", async (req, res) => {
     try {
       const { email, password } = req.body;
@@ -136,12 +146,47 @@ export async function registerRoutes(app) {
     }
   });
 
+  // Update Category
+app.put("/api/categories/:id", authenticateToken, requireRole(['admin']), async (req, res) => {
+  try {
+    const { name, description, parentId } = req.body;
+    const { id } = req.params;
+
+    const updatedCategory = await storage.updateCategory(id, name, description, parentId);
+    if (!updatedCategory) {
+      return res.status(404).json({ message: "Category not found" });
+    }
+
+    res.status(200).json(updatedCategory);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Delete Category
+app.delete("/api/categories/:id", authenticateToken, requireRole(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const deleted = await storage.deleteCategory(id);
+    if (!deleted) {
+      return res.status(404).json({ message: "Category not found" });
+    }
+
+    res.status(200).json({ message: "Category deleted successfully" });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+
   // Product routes
   app.get("/api/products", optionalAuth, async (req, res) => {
     try {
-      const { categoryId, vendorId, search, page = 1, limit = 20 } = req.query;
+      const { categoryId, categoryName, vendorId, search, page = 1, limit = 20 } = req.query;
       const products = await storage.getProducts({
         categoryId,
+        categoryName,
         vendorId,
         search,
         isActive: true
@@ -167,7 +212,7 @@ export async function registerRoutes(app) {
       res.status(500).json({ message: error.message });
     }
   });
-
+ 
   app.post("/api/products", authenticateToken, requireRole(['vendor']), async (req, res) => {
     try {
       const productData = {

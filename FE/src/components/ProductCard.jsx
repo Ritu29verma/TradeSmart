@@ -84,7 +84,7 @@ export default function ProductCard({ product, showVendorActions = false }) {
         {/* Header with Category and Actions */}
         <div className="flex items-center justify-between mb-2">
           <Badge variant="secondary" className={`text-xs bg-${getCategoryColor(product.category?.name)}-100 text-${getCategoryColor(product.category?.name)}-800`}>
-            {/* {product.category?.name || "Uncategorized"} */}
+            {product.categoryName || "Uncategorized"}
             
           </Badge>
           
