@@ -19,12 +19,16 @@ import {
 } from "lucide-react";
 import { negotiationAPI, queryClient } from "@/lib/api";
 import { authManager } from "@/lib/auth";
+import { socket, joinNegotiationRoom} from "@/lib/socket";
 
 export default function NegotiationChat({ product }) {
   const { toast } = useToast();
-  const [message, setMessage] = useState("");
+  const [messages, setMessages] = useState([]);
+const [message, setMessage] = useState("");
   const [offer, setOffer] = useState("");
+  const [selectedOfferId, setSelectedOfferId] = useState(null);
   const messagesEndRef = useRef(null);
+  const messagesContainerRef = useRef(null);   
   const user = authManager.getUser();
 
   // Find existing negotiation for this product
@@ -36,6 +40,35 @@ export default function NegotiationChat({ product }) {
   const currentNegotiation = negotiations?.find(
     n => n.productId === product.id && n.isActive
   );
+
+  const negotiationId = currentNegotiation?.id;
+const userRole = user?.role; // or manually set 'buyer' / 'vendor'
+const userId = user?.id;
+
+// console.log(negotiationId)
+useEffect(() => {
+  if (!negotiationId) return;
+
+negotiationAPI.getNegotiationById(negotiationId).then(res => {
+  // console.log("API response:", res.data);
+  setMessages(res.data.messages || []);
+});
+
+  console.log(`[SOCKET] Joining negotiation room: ${negotiationId}`);
+  socket.emit("joinNegotiationRoom", negotiationId );
+
+  const handleNewMessage = (data) => {
+    // console.log("[SOCKET] New message received:", data);
+    setMessages(prev => [...prev, data]);
+  };
+
+  socket.on("negotiation:message", handleNewMessage);
+
+  return () => {
+    socket.off("negotiation:message", handleNewMessage);
+  };
+}, [negotiationId]);
+
 
   // Send message mutation
   const sendMessageMutation = useMutation({
@@ -90,22 +123,40 @@ export default function NegotiationChat({ product }) {
     },
   });
 
-  // Scroll to bottom when messages change
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [currentNegotiation?.messages]);
+  messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+}, [messages]); // track `messages` state
 
-  const handleSendMessage = (e) => {
-    e.preventDefault();
-    if (!message.trim() && !offer) return;
+useEffect(() => {
+  if (messagesContainerRef.current) {
+    messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+  }
+}, [messages]);
 
-    const offerValue = offer ? parseFloat(offer) : null;
-    sendMessageMutation.mutate({
-      id: currentNegotiation.id,
-      message: message || `I'd like to offer $${offerValue}`,
-      offer: offerValue
+
+const handleSendMessage = (e) => {
+  e.preventDefault();
+
+  if (!currentNegotiation?.isActive) {
+    toast({
+      variant: "destructive",
+      title: "No active negotiation",
+      description: "Start a negotiation before sending a message."
     });
-  };
+    return;
+  }
+  if (!message.trim() && !offer) return;
+
+  const offerValue = offer ? parseFloat(offer) : null;
+
+  // Just call API → backend will emit via socket
+  sendMessageMutation.mutate({
+    id: currentNegotiation.id,
+    message: message || (offerValue ? `I'd like to offer $${offerValue}` : ""),
+    offer: offerValue
+  });
+};
 
   const handleAiNegotiate = () => {
     if (!message.trim()) return;
@@ -126,9 +177,10 @@ export default function NegotiationChat({ product }) {
   };
 
   const renderMessage = (msg, index) => {
-    const isUser = msg.sender === 'buyer' && msg.senderId === user.id;
+    const isUser = msg.senderId === user.id;
     const isAI = msg.sender === 'ai';
     const isVendor = msg.sender === 'vendor';
+     const isBuyer = msg.sender === 'buyer';
 
     return (
       <div key={index} className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}>
@@ -136,8 +188,8 @@ export default function NegotiationChat({ product }) {
           <Avatar className="w-8 h-8 flex-shrink-0">
             <AvatarFallback className={`text-xs ${
               isAI ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white' :
-              isVendor ? 'bg-green-500 text-white' :
-              'bg-blue-600 text-white'
+              isUser ? 'bg-blue-500 text-white' :
+              'bg-green-600 text-white'
             }`}>
               {isAI ? 'AI' : isVendor ? 'V' : 'B'}
             </AvatarFallback>
@@ -245,17 +297,21 @@ export default function NegotiationChat({ product }) {
       {/* Messages */}
       <Card>
         <CardContent className="p-4">
-          <div className="h-96 overflow-y-auto space-y-4 mb-4">
-            {currentNegotiation.messages?.length === 0 ? (
-              <div className="text-center py-8">
-                <MessageSquare className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-600">Start the conversation by sending a message.</p>
-              </div>
-            ) : (
-              currentNegotiation.messages?.map((msg, index) => renderMessage(msg, index))
-            )}
-            <div ref={messagesEndRef} />
-          </div>
+         <div 
+  className="h-96 overflow-y-auto space-y-4 mb-4" 
+  ref={messagesContainerRef} 
+>
+  {messages.length === 0 ? (
+    <div className="text-center py-8">
+      <MessageSquare className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+      <p className="text-gray-600">Start the conversation by sending a message.</p>
+    </div>
+  ) : (
+    messages.map((msg, index) => renderMessage(msg, index))
+  )}
+  {/* <div ref={messagesEndRef} /> */}
+
+</div>
 
           {/* Input Form */}
           {currentNegotiation.isActive && (

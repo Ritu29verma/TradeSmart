@@ -42,14 +42,14 @@ export async function registerRoutes(app) {
   });
 
   // Get all users with role vendor or buyer
-app.get("/api/users", authenticateToken, async (req, res) => {
-  try {
-    const users = await storage.getUsersByRoles(["vendor", "buyer"]);
-    res.json(users.map(user => ({ ...user, password: undefined }))); // hide password
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
+  app.get("/api/users", authenticateToken, async (req, res) => {
+    try {
+      const users = await storage.getUsersByRoles(["vendor", "buyer"]);
+      res.json(users.map(user => ({ ...user, password: undefined }))); // hide password
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
 
   app.post("/api/auth/login", async (req, res) => {
     try {
@@ -147,37 +147,37 @@ app.get("/api/users", authenticateToken, async (req, res) => {
   });
 
   // Update Category
-app.put("/api/categories/:id", authenticateToken, requireRole(['admin']), async (req, res) => {
-  try {
-    const { name, description, parentId } = req.body;
-    const { id } = req.params;
+  app.put("/api/categories/:id", authenticateToken, requireRole(['admin']), async (req, res) => {
+    try {
+      const { name, description, parentId } = req.body;
+      const { id } = req.params;
 
-    const updatedCategory = await storage.updateCategory(id, name, description, parentId);
-    if (!updatedCategory) {
-      return res.status(404).json({ message: "Category not found" });
+      const updatedCategory = await storage.updateCategory(id, name, description, parentId);
+      if (!updatedCategory) {
+        return res.status(404).json({ message: "Category not found" });
+      }
+
+      res.status(200).json(updatedCategory);
+    } catch (error) {
+      res.status(500).json({ message: error.message });
     }
+  });
 
-    res.status(200).json(updatedCategory);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
+  // Delete Category
+  app.delete("/api/categories/:id", authenticateToken, requireRole(['admin']), async (req, res) => {
+    try {
+      const { id } = req.params;
 
-// Delete Category
-app.delete("/api/categories/:id", authenticateToken, requireRole(['admin']), async (req, res) => {
-  try {
-    const { id } = req.params;
+      const deleted = await storage.deleteCategory(id);
+      if (!deleted) {
+        return res.status(404).json({ message: "Category not found" });
+      }
 
-    const deleted = await storage.deleteCategory(id);
-    if (!deleted) {
-      return res.status(404).json({ message: "Category not found" });
+      res.status(200).json({ message: "Category deleted successfully" });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
     }
-
-    res.status(200).json({ message: "Category deleted successfully" });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
+  });
 
 
   // Product routes
@@ -212,7 +212,7 @@ app.delete("/api/categories/:id", authenticateToken, requireRole(['admin']), asy
       res.status(500).json({ message: error.message });
     }
   });
- 
+
   app.post("/api/products", authenticateToken, requireRole(['vendor']), async (req, res) => {
     try {
       const productData = {
@@ -345,30 +345,30 @@ app.delete("/api/categories/:id", authenticateToken, requireRole(['admin']), asy
   });
 
   // Quote routes
-app.get("/api/rfqs/:rfqId/quotes", authenticateToken, async (req, res) => {
-  try {
-    const rfqId = req.params.rfqId;
-    const rfq = await storage.getRfq(rfqId);
-    if (!rfq) {
-      return res.status(404).json({ message: "RFQ not found" });
+  app.get("/api/rfqs/:rfqId/quotes", authenticateToken, async (req, res) => {
+    try {
+      const rfqId = req.params.rfqId;
+      const rfq = await storage.getRfq(rfqId);
+      if (!rfq) {
+        return res.status(404).json({ message: "RFQ not found" });
+      }
+
+      // Only the buyer who created it or relevant vendors may view:
+      if (req.user.role === 'buyer' && rfq.buyerId !== req.user.id) {
+        return res.status(403).json({ message: "Not authorized to view quotes for this RFQ" });
+      }
+
+      // (Optional) vendors could see incoming RFQs they can quote on via a separate route
+
+      const quotes = await storage.getQuotes(rfqId);
+      res.json(quotes);
+    } catch (error) {
+      console.error("Get quotes error:", error);
+      res.status(500).json({ message: error.message });
     }
+  });
 
-    // Only the buyer who created it or relevant vendors may view:
-    if (req.user.role === 'buyer' && rfq.buyerId !== req.user.id) {
-      return res.status(403).json({ message: "Not authorized to view quotes for this RFQ" });
-    }
-
-    // (Optional) vendors could see incoming RFQs they can quote on via a separate route
-
-    const quotes = await storage.getQuotes(rfqId);
-    res.json(quotes);
-  } catch (error) {
-    console.error("Get quotes error:", error);
-    res.status(500).json({ message: error.message });
-  }
-});
-
-app.post( "/api/rfqs/:rfqId/quotes", authenticateToken, requireRole(['vendor']), async (req, res) => {
+  app.post("/api/rfqs/:rfqId/quotes", authenticateToken, requireRole(['vendor']), async (req, res) => {
     try {
       const { rfqId } = req.params;
 
@@ -438,38 +438,38 @@ app.post( "/api/rfqs/:rfqId/quotes", authenticateToken, requireRole(['vendor']),
       res.status(500).json({ message: error.message });
     }
   }
-);
+  );
 
-app.post("/api/quotes/:id/accept", authenticateToken, requireRole(['buyer']), async (req, res) => {
-  try {
-    const quoteId = req.params.id;
-    const quote = await storage.getQuote(quoteId);
-    if (!quote) return res.status(404).json({ message: "Quote not found" });
-    if (quote.isAccepted) return res.status(400).json({ message: "Quote already accepted" });
+  app.post("/api/quotes/:id/accept", authenticateToken, requireRole(['buyer']), async (req, res) => {
+    try {
+      const quoteId = req.params.id;
+      const quote = await storage.getQuote(quoteId);
+      if (!quote) return res.status(404).json({ message: "Quote not found" });
+      if (quote.isAccepted) return res.status(400).json({ message: "Quote already accepted" });
 
-    const rfq = await storage.getRfq(quote.rfqId);
-    if (!rfq) return res.status(404).json({ message: "Associated RFQ not found" });
-    if (rfq.buyerId !== req.user.id) {
-      return res.status(403).json({ message: "Not authorized to accept this quote" });
+      const rfq = await storage.getRfq(quote.rfqId);
+      if (!rfq) return res.status(404).json({ message: "Associated RFQ not found" });
+      if (rfq.buyerId !== req.user.id) {
+        return res.status(403).json({ message: "Not authorized to accept this quote" });
+      }
+
+      const acceptedQuote = await storage.acceptQuote(quoteId);
+
+      const order = await storage.createOrder({
+        buyerId: req.user.id,
+        vendorId: quote.vendorId,
+        quoteId: quote.id,
+        quantity: quote.quantity,
+        unitPrice: quote.price,
+        totalAmount: (parseFloat(quote.price) * parseInt(quote.quantity)).toString()
+      });
+
+      res.json({ quote: acceptedQuote, order });
+    } catch (error) {
+      console.error("Accept quote error:", error);
+      res.status(500).json({ message: error.message });
     }
-
-    const acceptedQuote = await storage.acceptQuote(quoteId);
-
-    const order = await storage.createOrder({
-      buyerId: req.user.id,
-      vendorId: quote.vendorId,
-      quoteId: quote.id,
-      quantity: quote.quantity,
-      unitPrice: quote.price,
-      totalAmount: (parseFloat(quote.price) * parseInt(quote.quantity)).toString()
-    });
-
-    res.json({ quote: acceptedQuote, order });
-  } catch (error) {
-    console.error("Accept quote error:", error);
-    res.status(500).json({ message: error.message });
-  }
-});
+  });
 
 
   // Order routes
@@ -483,6 +483,7 @@ app.post("/api/quotes/:id/accept", authenticateToken, requireRole(['buyer']), as
       }
 
       const orders = await storage.getOrders(filters);
+      // console.log("Orders found:", orders);
       res.json(orders);
     } catch (error) {
       res.status(500).json({ message: error.message });
@@ -535,11 +536,11 @@ app.post("/api/quotes/:id/accept", authenticateToken, requireRole(['buyer']), as
       if (!product) {
         return res.status(404).json({ message: "Product not found" });
       }
-
+      const vendorId = product.vendorId; 
       const negotiation = await storage.createNegotiation({
         productId,
         buyerId: req.user.id,
-        vendorId: product.vendorId,
+        vendorId,
         initialPrice: product.price,
         quantity: quantity || 1
       });
@@ -554,45 +555,81 @@ app.post("/api/quotes/:id/accept", authenticateToken, requireRole(['buyer']), as
         });
       }
 
+      const io = req.app.get("io");
+      io.to(`vendor_${vendorId}`).emit("negotiation:new", {
+        negotiationId: negotiation.id,
+        productName: product.name,
+        buyerName: req.user.name,
+        message: `New negotiation started for ${product.name}`
+      });
+
       res.status(201).json(negotiation);
     } catch (error) {
       res.status(500).json({ message: error.message });
     }
   });
 
-  app.post("/api/negotiations/:id/message", authenticateToken, async (req, res) => {
-    try {
-      const { message, offer } = req.body;
-      const negotiation = await storage.getNegotiation(req.params.id);
+  app.get("/api/getNegotiationById/:id", authenticateToken, async (req, res) => {
+  try {
+    const negotiation = await storage.getNegotiation(req.params.id);
+    if (!negotiation) return res.status(404).json({ message: "Negotiation not found" });
 
-      if (!negotiation) {
-        return res.status(404).json({ message: "Negotiation not found" });
-      }
-
-      // Check authorization
-      if (negotiation.buyerId !== req.user.id && negotiation.vendorId !== req.user.id) {
-        return res.status(403).json({ message: "Not authorized" });
-      }
-
-      const senderRole = negotiation.buyerId === req.user.id ? 'buyer' : 'vendor';
-
-      const updatedNegotiation = await storage.addNegotiationMessage(negotiation.id, {
-        sender: senderRole,
-        senderId: req.user.id,
-        message,
-        offer: offer || null
-      });
-
-      // If offer provided, update current price
-      if (offer) {
-        await storage.updateNegotiation(negotiation.id, { currentPrice: offer });
-      }
-
-      res.json(updatedNegotiation);
-    } catch (error) {
-      res.status(500).json({ message: error.message });
+    // Only buyer or vendor can access
+    if (negotiation.buyerId !== req.user.id && negotiation.vendorId !== req.user.id) {
+      return res.status(403).json({ message: "Not authorized" });
     }
-  });
+
+    res.json(negotiation);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+  app.post("/api/negotiations/:id/message", authenticateToken, async (req, res) => {
+  try {
+    const io = req.app.get("io");
+    const { message, offer } = req.body;
+    const negotiation = await storage.getNegotiation(req.params.id);
+
+    if (!negotiation) {
+      return res.status(404).json({ message: "Negotiation not found" });
+    }
+
+    // Check authorization
+    if (negotiation.buyerId !== req.user.id && negotiation.vendorId !== req.user.id) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    const senderRole = negotiation.buyerId === req.user.id ? 'buyer' : 'vendor';
+
+    const newMessage = {
+      sender: senderRole,
+      senderId: req.user.id,
+      senderName: req.user.name,
+      message,
+      offer: offer || null,
+      timestamp: new Date().toISOString()
+    };
+
+    const updatedNegotiation = await storage.addNegotiationMessage(negotiation.id, newMessage);
+
+    // If offer provided, update current price
+    if (offer) {
+      await storage.updateNegotiation(negotiation.id, { currentPrice: offer });
+    }
+
+    const roomName = `negotiation_${negotiation.id}`;
+    console.log(`[EMIT] Sending to ${roomName}`, newMessage);
+    io.to(roomName).emit("negotiation:message", {
+      negotiationId: negotiation.id,
+      ...newMessage
+    });
+
+    res.json(updatedNegotiation);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
 
   app.post("/api/negotiations/:id/ai-negotiate", authenticateToken, async (req, res) => {
     try {
@@ -612,6 +649,7 @@ app.post("/api/quotes/:id/accept", authenticateToken, requireRole(['buyer']), as
         negotiationHistory: negotiation.messages || []
       });
 
+    
       // Add AI response to negotiation
       const updatedNegotiation = await storage.addNegotiationMessage(negotiation.id, {
         sender: 'ai',
@@ -631,9 +669,9 @@ app.post("/api/quotes/:id/accept", authenticateToken, requireRole(['buyer']), as
 
       res.json({ negotiation: updatedNegotiation, aiResponse });
     } catch (error) {
-    console.error("Negotiation API error:", error);
-    res.status(500).json({ message: error.message || "Failed to process negotiation" });
-  }
+      console.error("Negotiation API error:", error);
+      res.status(500).json({ message: error.message || "Failed to process negotiation" });
+    }
   });
 
   app.post("/api/negotiations/:id/accept", authenticateToken, async (req, res) => {
@@ -668,66 +706,66 @@ app.post("/api/quotes/:id/accept", authenticateToken, requireRole(['buyer']), as
 
   // AI Tools routes
 
-// route handler
-app.post("/api/ai/price-recommendation", authenticateToken, requireRole(["vendor"]),
-  async (req, res) => {
-    try {
-      const { productId } = req.body;
-      console.log("[PriceRec] incoming productId:", productId, "for user:", req.user?.id);
-
-      const product = await storage.getProduct(productId);
-      if (!product) {
-        console.warn("[PriceRec] product not found:", productId);
-        return res.status(404).json({ message: "Product not found" });
-      }
-      if (product.vendorId !== req.user.id) {
-        console.warn(
-          "[PriceRec] ownership mismatch. product.vendorId:",
-          product.vendorId,
-          "user.id:",
-          req.user.id
-        );
-        return res.status(404).json({ message: "Product not found" });
-      }
-
-      let recommendation;
+  // route handler
+  app.post("/api/ai/price-recommendation", authenticateToken, requireRole(["vendor"]),
+    async (req, res) => {
       try {
-        recommendation = await aiService.generatePriceRecommendation(product);
-      } catch (innerErr) {
-        console.error("[PriceRec] AI service failed:", innerErr.message);
+        const { productId } = req.body;
+        console.log("[PriceRec] incoming productId:", productId, "for user:", req.user?.id);
 
-        // Quota / billing error -> inform client clearly
-        if (innerErr.message.toLowerCase().includes("quota")) {
-          return res.status(429).json({
-            message: "AI service quota exceeded",
+        const product = await storage.getProduct(productId);
+        if (!product) {
+          console.warn("[PriceRec] product not found:", productId);
+          return res.status(404).json({ message: "Product not found" });
+        }
+        if (product.vendorId !== req.user.id) {
+          console.warn(
+            "[PriceRec] ownership mismatch. product.vendorId:",
+            product.vendorId,
+            "user.id:",
+            req.user.id
+          );
+          return res.status(404).json({ message: "Product not found" });
+        }
+
+        let recommendation;
+        try {
+          recommendation = await aiService.generatePriceRecommendation(product);
+        } catch (innerErr) {
+          console.error("[PriceRec] AI service failed:", innerErr.message);
+
+          // Quota / billing error -> inform client clearly
+          if (innerErr.message.toLowerCase().includes("quota")) {
+            return res.status(429).json({
+              message: "AI service quota exceeded",
+              detail: innerErr.message,
+              suggestion: "Check billing/plan or wait before retrying.",
+            });
+          }
+
+          // Other transient or internal AI service errors
+          return res.status(502).json({
+            message: "AI service error",
             detail: innerErr.message,
-            suggestion: "Check billing/plan or wait before retrying.",
           });
         }
 
-        // Other transient or internal AI service errors
-        return res.status(502).json({
-          message: "AI service error",
-          detail: innerErr.message,
-        });
-      }
+        if (!recommendation) {
+          console.warn("[PriceRec] AI service returned empty recommendation");
+          return res.status(500).json({ message: "Empty recommendation from AI service" });
+        }
 
-      if (!recommendation) {
-        console.warn("[PriceRec] AI service returned empty recommendation");
-        return res.status(500).json({ message: "Empty recommendation from AI service" });
+        res.json(recommendation);
+      } catch (error) {
+        console.error("[PriceRec] unexpected error:", error);
+        const payload = { message: "Failed to generate price recommendation" };
+        if (process.env.NODE_ENV === "development") {
+          payload.error = error.message;
+        }
+        res.status(500).json(payload);
       }
-
-      res.json(recommendation);
-    } catch (error) {
-      console.error("[PriceRec] unexpected error:", error);
-      const payload = { message: "Failed to generate price recommendation" };
-      if (process.env.NODE_ENV === "development") {
-        payload.error = error.message;
-      }
-      res.status(500).json(payload);
     }
-  }
-);
+  );
 
   app.post("/api/ai/demand-forecast", authenticateToken, requireRole(['vendor']), async (req, res) => {
     try {
@@ -741,14 +779,14 @@ app.post("/api/ai/price-recommendation", authenticateToken, requireRole(["vendor
       const priceHistory = await storage.getPriceHistory(productId);
       const forecast = await aiService.forecastDemand(product, priceHistory);
       res.json(forecast);
-   } catch (error) {
-  console.error("Error forecasting demand:", error?.message, error?.response?.data || error);
-  return res.status(500).json({
-    message: "Failed to generate demand forecast",
-    detail: error?.message || "Unknown error",
-    raw: error?.response?.data || null
-  });
-}
+    } catch (error) {
+      console.error("Error forecasting demand:", error?.message, error?.response?.data || error);
+      return res.status(500).json({
+        message: "Failed to generate demand forecast",
+        detail: error?.message || "Unknown error",
+        raw: error?.response?.data || null
+      });
+    }
   });
 
   app.post("/api/ai/risk-assessment", authenticateToken, requireRole(['admin', 'vendor']), async (req, res) => {

@@ -52,7 +52,7 @@ const { data: currentUser, isLoading } = useQuery({
   queryFn: authAPI.getMe,
   enabled: !!user,
 });
-console.log(currentUser) 
+// console.log(currentUser) 
 
   // Update profile mutation
   const updateProfileMutation = useMutation({
@@ -259,6 +259,11 @@ console.log(currentUser)
                         <Calendar className="w-4 h-4" />
                         <span>Joined {new Date(currentUser?.createdAt).toLocaleDateString()}</span>
                       </div>
+                    </div>
+                    <div className="flex mt-2 items-center space-x-1 text-sm text-gray-600">
+                       <User className="w-4 h-4" />
+                     <span className="font-black"> USER ID : </span>
+                       <span>{currentUser?.id || "NA"}</span>
                     </div>
                   </div>
                 </div>

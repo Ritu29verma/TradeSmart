@@ -89,6 +89,7 @@ export const negotiationAPI = {
   sendMessage: (id, message) => api.post(`/negotiations/${id}/message`, message),
   aiNegotiate: (id, message) => api.post(`/negotiations/${id}/ai-negotiate`, { message }),
   acceptNegotiation: (id) => api.post(`/negotiations/${id}/accept`),
+  getNegotiationById: (id) => api.get(`/getNegotiationById/${id}`)
 };
 
 // AI API

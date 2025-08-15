@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,10 +17,13 @@ import {
   FileText,
   TrendingUp
 } from "lucide-react";
-import { dashboardAPI, rfqAPI, orderAPI, negotiationAPI } from "@/lib/api";
+import { dashboardAPI, rfqAPI, orderAPI, negotiationAPI, productAPI } from "@/lib/api";
 import { authManager } from "@/lib/auth";
 import RFQForm from "@/components/RFQForm";
 import { formatDistanceToNowStrict } from "date-fns";
+import { useParams } from "wouter";
+import NegotiationChat from "@/components/NegotiationChat";
+import { socket, joinNegotiationRoom } from "@/lib/socket";
 
 export default function BuyerDashboard({
   onStartNegotiation // callback: (quote) => void
@@ -30,6 +33,17 @@ export default function BuyerDashboard({
   const queryClient = useQueryClient();
   const [selectedRfqId, setSelectedRfqId] = useState(null);
   const [selectedQuoteId, setSelectedQuoteId] = useState(null);
+  const [activeProduct, setActiveProduct] = useState(null);
+  const [activeNegotiationId, setActiveNegotiationId] = useState(null);
+  const { id } = useParams();
+  const buyerId = user?.id;
+
+    // Fetch buyer's negotiations
+  const { data: negotiations, isLoading: negotiationsLoading, isError: negotiationsError } = useQuery({
+    queryKey: ["buyer-negotiations"],
+    queryFn: () => negotiationAPI.getNegotiations().then(res => res.data),
+    enabled: !!user && user.role === "buyer",
+  });
 
   // Fetch buyer stats
   const { data: stats, isLoading: statsLoading, isError: statsError } = useQuery({
@@ -40,7 +54,7 @@ export default function BuyerDashboard({
   });
 
   // Fetch buyer's RFQs
-  const { data: rfqs, isLoading: rfqsLoading, isError: rfqsError } = useQuery({
+  const { data: rfqs = [], isLoading: rfqsLoading, isError: rfqsError } = useQuery({
     queryKey: ["buyer-rfqs"],
     queryFn: () => rfqAPI.getRfqs().then(res => res.data),
     enabled: !!user && user.role === "buyer",
@@ -52,13 +66,7 @@ export default function BuyerDashboard({
     queryFn: () => orderAPI.getOrders().then(res => res.data),
     enabled: !!user && user.role === "buyer",
   });
-
-  // Fetch buyer's negotiations
-  const { data: negotiations, isLoading: negotiationsLoading, isError: negotiationsError } = useQuery({
-    queryKey: ["buyer-negotiations"],
-    queryFn: () => negotiationAPI.getNegotiations().then(res => res.data),
-    enabled: !!user && user.role === "buyer",
-  });
+  // console.log(orders)
 
   // Fetch quotes for this RFQ
   const quotesKey = ["rfq", selectedRfqId, "quotes"];
@@ -73,6 +81,22 @@ export default function BuyerDashboard({
         description: err.message || "Please try again."
       });
     }
+  });
+  // console.log(quotes);
+
+  const { data: products, isLoading: productsLoading } = useQuery({
+    queryKey: ['/api/products', user?.id],
+    queryFn: () =>
+      productAPI.getProducts({ vendorId: user?.id })
+        .then(res => res.data),
+    enabled: !!user?.id,
+  });
+
+  // Fetch single product only if ID exists
+  const { data: product, isLoading: productLoading } = useQuery({
+    queryKey: ["/products", id],
+    queryFn: () => productAPI.getProduct(id).then(res => res.data),
+    enabled: !!id,
   });
 
   // Accept quote mutation
@@ -95,6 +119,45 @@ export default function BuyerDashboard({
       queryClient.invalidateQueries({ queryKey: ["buyer-rfqs"] });
     }
   });
+
+    useEffect(() => {
+    if (product) {
+      setActiveProduct(product);
+    }
+  }, [product]);
+
+ useEffect(() => {
+    // 1️⃣ Connect socket when component mounts
+    if (!socket.connected) {
+      socket.connect();
+    }
+
+    // 2️⃣ When socket connects, join room
+    socket.on("connect", () => {
+      console.log("🟢 Socket connected:", socket.id);
+
+      if (id && product?.id) {
+        const negotiation = negotiations?.find(
+          n => n.productId === product.id && n.isActive
+        );
+
+        if (negotiation) {
+          console.log(`[SOCKET] Buyer joining negotiation room: ${negotiation.id}`);
+          socket.emit("joinNegotiationRoom", negotiation.id);
+        } else {
+          console.log("[SOCKET] No active negotiation found for this product");
+        }
+      }
+    });
+
+    // 4️⃣ Cleanup on unmount
+    return () => {
+      console.log("🔴 Disconnecting socket");
+      socket.off("connect");
+      // socket.off("negotiation:message");
+      socket.disconnect();
+    };
+  }, [id, product, negotiations]);
 
   if (quotesLoading) {
     return (
@@ -132,6 +195,17 @@ export default function BuyerDashboard({
       </div>
     );
   }
+
+if (id) {
+  if (productLoading) return <p>Loading product...</p>;
+  if (!product) return <p>Product not found</p>;
+
+  return (
+    <div>
+      <NegotiationChat product={product} />
+    </div>
+  );
+}
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -196,7 +270,7 @@ export default function BuyerDashboard({
         </div>
 
         {/* Quick Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
           <Card className="hover:shadow-lg transition-shadow cursor-pointer">
             <CardContent className="p-6">
               <Link href="/marketplace" className="block">
@@ -219,7 +293,7 @@ export default function BuyerDashboard({
             </CardContent>
           </Card>
 
-          <Card className="hover:shadow-lg transition-shadow cursor-pointer">
+          {/* <Card className="hover:shadow-lg transition-shadow cursor-pointer">
             <CardContent className="p-6">
               <Link href="/ai-tools" className="block">
                 <div className="text-center">
@@ -229,18 +303,28 @@ export default function BuyerDashboard({
                 </div>
               </Link>
             </CardContent>
-          </Card>
+          </Card> */}
         </div>
 
         {/* Main Content */}
-        <Tabs defaultValue="orders" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5">
-            <TabsTrigger value="orders">Orders</TabsTrigger>
-            <TabsTrigger value="rfqs">RFQs</TabsTrigger>
-            <TabsTrigger value="incoming-quotes">Incoming Quotes</TabsTrigger>
-            <TabsTrigger value="negotiations">Negotiations</TabsTrigger>
-            <TabsTrigger value="analytics">Analytics</TabsTrigger>
-          </TabsList>
+      <Tabs defaultValue="orders" className="space-y-10">
+  <TabsList className="flex flex-wrap gap-0 w-full bg-gray-100 p-2 rounded">
+    {[
+      ["orders", "Orders"],
+      ["rfqs", "RFQs"],
+      ["incoming-quotes", "Incoming Quotes"],
+      ["negotiations", "Negotiations"],
+      ["analytics", "Analytics"]
+    ].map(([value, label]) => (
+      <TabsTrigger
+        key={value}
+        value={value}
+        className="flex-1 min-w-[100px] text-center text-sm break-words mb-2"
+      >
+        {label}
+      </TabsTrigger>
+    ))}
+  </TabsList>
 
           <TabsContent value="orders" className="space-y-6">
             <div className="flex justify-between items-center">
@@ -363,8 +447,8 @@ export default function BuyerDashboard({
                           <div
                             key={rfq.id}
                             className={`p-3 rounded-lg border cursor-pointer flex justify-between items-center ${selectedRfqId === rfq.id
-                                ? "border-blue-500 bg-blue-50/10"
-                                : "border-transparent hover:bg-slate-100/5"
+                              ? "border-blue-500 bg-blue-50/10"
+                              : "border-transparent hover:bg-slate-100/5"
                               }`}
                             onClick={() => setSelectedRfqId(rfq.id)}
                           >
@@ -420,12 +504,12 @@ export default function BuyerDashboard({
                             </span>
                           </p>
                           <p className="text-sm text-slate-300 mb-1">
-                            Delivery time: {quote.delivery_time || "N/A"}
+                            Delivery time: {quote.deliveryTime || "N/A"}
                           </p>
-                          {quote.valid_until ? (
+                          {quote.validUntil ? (
                             <p className="text-sm text-slate-300 mb-1">
-                              Valid until: {new Date(quote.valid_until).toLocaleString()} (
-                              {formatDistanceToNowStrict(new Date(quote.valid_until), {
+                              Valid until: {new Date(quote.validUntil).toLocaleString()} (
+                              {formatDistanceToNowStrict(new Date(quote.validUntil), {
                                 addSuffix: true
                               })}
                               )
@@ -438,7 +522,7 @@ export default function BuyerDashboard({
                             <p className="text-sm text-slate-300 mb-1">Notes: {quote.notes}</p>
                           )}
                           <p className="text-xs text-slate-400">
-                            Submitted: {new Date(quote.created_at).toLocaleString()}
+                            Submitted: {new Date(quote.createdAt).toLocaleString()}
                           </p>
                         </div>
 
@@ -518,9 +602,22 @@ export default function BuyerDashboard({
                             Updated: {new Date(negotiation.updatedAt).toLocaleDateString()}
                           </p>
                         </div>
-                        <Badge variant={negotiation.isActive ? "default" : "secondary"}>
+                        {/* <Badge variant={negotiation.isActive ? "default" : "secondary"}>
                           {negotiation.isActive ? "Active" : "Closed"}
-                        </Badge>
+                        </Badge> */}
+                        <div>
+                          {(() => {
+                            const product = products?.find(p => p.id === negotiation.productId);
+                            if (!product) return null;
+
+                            return (
+                              <Button onClick={() => window.location.href = `/buyer-dashboard/${product.id}`}>
+                                Start
+                              </Button>
+                            );
+                          })()}
+                        </div>
+
                       </div>
                     ))}
                   </div>

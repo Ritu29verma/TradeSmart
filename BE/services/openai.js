@@ -253,7 +253,7 @@ Provide a negotiation response in JSON format:
   "acceptanceRecommendation": "suggest" | "accept" | "counter",
   "marketJustification": "Market-based reasoning for the price"
 }`;
-
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     const result = await model.generateContent({
       contents: [{ role: "user", parts: [{ text: prompt }] }],
@@ -263,20 +263,41 @@ Provide a negotiation response in JSON format:
       },
     });
 
+    console.log("Gemini raw response:", result);
+
     const content = result.response?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!content) {
       throw new Error("Empty response from Gemini API");
     }
 
     // Extract JSON from response
-    const jsonStart = content.indexOf("{");
-    const jsonEnd = content.lastIndexOf("}");
-    const cleanJson = content.slice(jsonStart, jsonEnd + 1);
+    let parsed;
+try {
+  const jsonStart = content.indexOf("{");
+  const jsonEnd = content.lastIndexOf("}");
+  const cleanJson = content.slice(jsonStart, jsonEnd + 1);
+  parsed = JSON.parse(cleanJson);
+} catch (err) {
+  console.error("Failed to parse AI JSON:", content);
+  parsed = {
+    response: "Sorry, AI could not generate a proper negotiation response. Please try again.",
+    counterOffer: null,
+    reasoning: "",
+    acceptanceRecommendation: "counter",
+    marketJustification: ""
+  };
+}
+return parsed;
 
-    return JSON.parse(cleanJson);
   } catch (error) {
     console.error("Error in price negotiation:", error);
-    throw new Error("Failed to process negotiation");
+     return {
+      response: "Failed to process negotiation. Please try again later.",
+      counterOffer: null,
+      reasoning: "",
+      acceptanceRecommendation: "counter",
+      marketJustification: ""
+    };
   }
 }
 

@@ -5,12 +5,15 @@ import { registerRoutes } from "./routes.js";
 import 'module-alias/register.js';
 import { initDb } from './db.js';
 import cors from 'cors';
+import { initSocket } from "./socket.js";
+import http from "http";
+
 
 const app = express();
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
-app.use(cors({ origin: '*', credentials: true }));
+app.use(cors({ origin: process.env.FRONTEND_URL, credentials: true }));
 
 // Logging middleware
 app.use((req, res, next) => {
@@ -52,10 +55,14 @@ app.use((err, _req, res, _next) => {
   res.status(status).json({ message });
 });
 
+const server = http.createServer(app);
+server.app = app;
+initSocket(server);
+
 // Only start server locally
 if (!process.env.VERCEL) {
   const port = parseInt(process.env.PORT || "5000", 10);
-  app.listen(port, () => {
+  server.listen(port, () => {
     console.log(`🚀 Server running locally on port ${port}`);
   });
 }

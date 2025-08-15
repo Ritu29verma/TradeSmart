@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams } from "wouter";
+import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,16 +10,18 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { 
-  Star, 
-  Heart, 
-  Share2, 
-  MessageSquare, 
+import { socket, joinNegotiationRoom } from "@/lib/socket";
+import {
+  Star,
+  Heart,
+  Share2,
+  MessageSquare,
   TrendingUp,
   Package,
   Truck,
   Shield,
-  Info
+  Info,
+  CheckCircle
 } from "lucide-react";
 import { productAPI, negotiationAPI, queryClient } from "@/lib/api";
 import { authManager } from "@/lib/auth";
@@ -31,25 +34,70 @@ export default function ProductDetails() {
   const [isNegotiationOpen, setIsNegotiationOpen] = useState(false);
   const [isRFQOpen, setIsRFQOpen] = useState(false);
   const [quantity, setQuantity] = useState(1);
+   const [, navigate] = useLocation();
 
   const user = authManager.getUser();
 
   // Fetch product details
-const { data: product, isLoading: productLoading } = useQuery({
-  queryKey: ["/api/products", id],
-  queryFn: async () => {
-    const res = await productAPI.getProduct(id);
-    return res.data;
-  },
-  enabled: !!id,
-});
+  const { data: product, isLoading: productLoading } = useQuery({
+    queryKey: ["/api/products", id],
+    queryFn: async () => {
+      const res = await productAPI.getProduct(id);
+      return res.data;
+    },
+    enabled: !!id,
+  });
 
-useEffect(() => {
-  if (product) {
-    console.log("Fetched product:", product);
-  }
-}, [product]);
+  const { data: negotiations = [], isLoading: negotiationsLoading } = useQuery({
+    queryKey: ['/negotiations'],
+    queryFn: () => negotiationAPI.getNegotiations().then(res => res.data),
+    enabled: !!user && user.role === "buyer",
+  });
 
+  useEffect(() => {
+    if (product) {
+      console.log("Fetched product:", product);
+    }
+  }, [product]);
+
+  useEffect(() => {
+    // 1️⃣ Connect socket when component mounts
+    if (!socket.connected) {
+      socket.connect();
+    }
+
+    // 2️⃣ When socket connects, join room
+    socket.on("connect", () => {
+      console.log("🟢 Socket connected:", socket.id);
+
+      if (id && product?.id) {
+        const negotiation = negotiations?.find(
+          n => n.productId === product.id && n.isActive
+        );
+
+        if (negotiation) {
+          // console.log(`[SOCKET] Vendor joining negotiation room: ${negotiation.id}`);
+          socket.emit("joinNegotiationRoom", negotiation.id);
+        } else {
+          console.log("[SOCKET] No active negotiation found for this product");
+        }
+      }
+    });
+
+    // 3️⃣ Listen for messages
+    socket.on("negotiation:message", (data) => {
+      // console.log("📩 New message received:", data);
+      // update state with the new message here
+    });
+
+    // 4️⃣ Cleanup on unmount
+    return () => {
+      console.log("🔴 Disconnecting socket");
+      socket.off("connect");
+      socket.off("negotiation:message");
+      socket.disconnect();
+    };
+  }, [id, product, negotiations]);
 
   // Start negotiation mutation
   const startNegotiationMutation = useMutation({
@@ -91,13 +139,69 @@ useEffect(() => {
     if (!user) {
       toast({
         variant: "destructive",
-        title: "Login required", 
+        title: "Login required",
         description: "Please login to request a quote.",
       });
       return;
     }
     setIsRFQOpen(true);
   };
+
+  const currentNegotiation = negotiations?.find(
+    (n) => n.productId === product?.id && n.isActive
+  );
+
+  // Accept negotiation mutation
+  const acceptNegotiationMutation = useMutation({
+    mutationFn: negotiationAPI.acceptNegotiation,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/negotiations"] });
+      toast({
+        title: "Deal accepted!",
+        description: "Your negotiation has been accepted and an order has been created.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        variant: "destructive",
+        title: "Error accepting deal",
+        description: error.response?.data?.message || "An error occurred",
+      });
+    },
+  });
+
+  const handleAcceptDeal = () => {
+    acceptNegotiationMutation.mutate(currentNegotiation.id);
+  };
+
+  const handleAcceptDealClick = async () => {
+    if (currentNegotiation) {
+      // Accept the negotiation
+      handleAcceptDeal(); // existing mutation
+    } else {
+      // Directly create an order for this product
+      try {
+        const order = await orderAPI.createOrder({
+          productId: product.id,
+          quantity,
+          unitPrice: product.price,
+        });
+        toast({
+          title: "Order placed!",
+          description: `Your order for ${product.name} has been created.`,
+        });
+        // Navigate to orders page
+        navigate("/buyer-dashboard");
+      } catch (error) {
+        toast({
+          variant: "destructive",
+          title: "Error creating order",
+          description: error.response?.data?.message || "Failed to place order",
+        });
+      }
+    }
+  };
+
 
   if (productLoading) {
     return (
@@ -139,8 +243,8 @@ useEffect(() => {
           <div className="space-y-4">
             <Card>
               <CardContent className="p-0">
-                <img 
-                  src={product.images?.[0] || "https://images.unsplash.com/photo-1518640467707-6811f4a6ab73?w=600&h=400&fit=crop"} 
+                <img
+                  src={product.images?.[0] || "https://images.unsplash.com/photo-1518640467707-6811f4a6ab73?w=600&h=400&fit=crop"}
                   alt={product.name}
                   className="w-full h-96 object-cover rounded-lg"
                 />
@@ -149,9 +253,9 @@ useEffect(() => {
             {product.images?.length > 1 && (
               <div className="grid grid-cols-4 gap-2">
                 {product.images.slice(1, 5).map((image, index) => (
-                  <img 
+                  <img
                     key={index}
-                    src={image} 
+                    src={image}
                     alt={`${product.name} ${index + 2}`}
                     className="w-full h-20 object-cover rounded-md border-2 border-transparent hover:border-blue-500 cursor-pointer transition-colors"
                   />
@@ -211,26 +315,44 @@ useEffect(() => {
 
             {/* Action Buttons */}
             <div className="space-y-4">
-              <div className="flex space-x-4">
-                <Button 
-                  onClick={handleGetQuote} 
-                  size="lg" 
-                  className="flex-1"
-                >
-                  Get Quote
-                </Button>
-                <Button 
-                  variant="outline" 
-                  onClick={handleStartNegotiation}
-                  disabled={startNegotiationMutation.isPending}
-                  size="lg"
-                  className="flex-1"
-                >
-                  <MessageSquare className="w-4 h-4 mr-2" />
-                  {startNegotiationMutation.isPending ? "Starting..." : "Negotiate Price"}
-                </Button>
-              </div>
-              
+              {user?.role === "buyer" && (
+                <div className="flex space-x-4">
+                  <Button
+                    onClick={handleGetQuote}
+                    size="lg"
+                    className="flex-1"
+                  >
+                    Get Quote
+                  </Button>
+
+                  {/* Start Negotiation Button */}
+                  <Button
+                    variant="outline"
+                    onClick={handleStartNegotiation}
+                    disabled={!!currentNegotiation || startNegotiationMutation.isPending}
+                    size="lg"
+                    className="flex-1"
+                  >
+                    <MessageSquare className="w-4 h-4 mr-2" />
+                    {startNegotiationMutation.isPending
+                      ? "Starting..."
+                      : currentNegotiation
+                        ? "Negotiation in Progress"
+                        : "Negotiate Price"}
+                  </Button>
+
+                  <Button
+                    size="sm"
+                    onClick={handleAcceptDealClick}
+                    disabled={acceptNegotiationMutation.isPending}
+                    className="w-full text-xs"
+                  >
+                    <CheckCircle className="w-3 h-3 mr-1" />
+                    Accept Deal
+                  </Button>
+                </div>
+              )}
+
               <div className="flex space-x-2">
                 <Button variant="outline" size="sm">
                   <Heart className="w-4 h-4 mr-2" />
@@ -375,13 +497,18 @@ useEffect(() => {
         </Dialog>
 
         <Dialog open={isRFQOpen} onOpenChange={setIsRFQOpen}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
+          <DialogContent className="max-w-xl h-screen flex flex-col">
+            <DialogHeader className="flex-shrink-0">
               <DialogTitle>Request Quote - {product.name}</DialogTitle>
             </DialogHeader>
-            <RFQForm product={product} onSuccess={() => setIsRFQOpen(false)} />
+
+            {/* Scrollable container */}
+            <div className="flex-1 overflow-y-auto p-2">
+              <RFQForm product={product} onSuccess={() => setIsRFQOpen(false)} />
+            </div>
           </DialogContent>
         </Dialog>
+
       </div>
     </div>
   );

@@ -16,6 +16,7 @@ import AITools from "@/pages/AITools";
 import Profile from "@/pages/Profile";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import PricingChart from "./components/PricingChart";
 import { AuthManager } from "./lib/auth";
 
 function Router() {
@@ -29,11 +30,14 @@ function Router() {
           <Route path="/register" component={Register} />
           <Route path="/marketplace" component={Marketplace} />
           <Route path="/product/:id" component={ProductDetails} />
-          <Route path="/vendor-dashboard" component={VendorDashboard} />
-          <Route path="/buyer-dashboard" component={BuyerDashboard} />
+          <Route path="/vendor-dashboard" exact component={VendorDashboard} />
+          <Route path="/vendor-dashboard/:id" component={VendorDashboard} />
+          <Route path="/buyer-dashboard" exact component={BuyerDashboard} />
+          <Route path="/buyer-dashboard/:id" component={BuyerDashboard} />
           <Route path="/admin-panel" component={AdminPanel} />
           <Route path="/ai-tools" component={AITools} />
           <Route path="/profile" component={Profile} />
+          <Route path="/pricing-chart" component={PricingChart}/>
           <Route component={NotFound} />
         </Switch>
       </main>
@@ -43,7 +47,7 @@ function Router() {
 }
 
 function App() {
-  AuthManager.restore(); 
+  AuthManager.restore();
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>

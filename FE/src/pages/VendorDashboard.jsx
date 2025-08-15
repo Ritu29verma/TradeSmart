@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useParams } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,9 +26,11 @@ import {
   Trash2,
   BarChart3
 } from "lucide-react";
-import { productAPI, dashboardAPI, categoryAPI, queryClient, rfqAPI } from "@/lib/api";
+import { productAPI, dashboardAPI, categoryAPI, queryClient, rfqAPI, negotiationAPI , orderAPI} from "@/lib/api";
 import { authManager } from "@/lib/auth";
 import ProductCard from "@/components/ProductCard";
+import NegotiationChat from "@/components/NegotiationChat";
+import { socket, joinNegotiationRoom } from "@/lib/socket";
 
 export default function VendorDashboard() {
   const { toast } = useToast();
@@ -44,8 +47,14 @@ export default function VendorDashboard() {
     specifications: "",
     images: []
   });
-
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [isNegotiationOpen, setIsNegotiationOpen] = useState(false);
+  const [activeNegotiationId, setActiveNegotiationId] = useState(null);
+  const [activeProduct, setActiveProduct] = useState(null);
   const user = authManager.getUser();
+  const isVendor = user?.role === "vendor";
+  const { id } = useParams();
+  const vendorId = user?.id;
 
   // Fetch vendor stats
   const { data: stats, isLoading: statsLoading } = useQuery({
@@ -54,14 +63,29 @@ export default function VendorDashboard() {
     enabled: !!sessionStorage.getItem('authToken'), // or authManager.isAuthenticated()
   });
 
+  // Negotiations
+  const { data: negotiations = [], isLoading: negotiationsLoading } = useQuery({
+    queryKey: ['/negotiations'],
+    queryFn: () => negotiationAPI.getNegotiations().then(res => res.data),
+    enabled: !!user && user.role === "vendor",
+  });
+  // console.log(negotiations)
+
+
   // Fetch vendor's products
   const { data: products, isLoading: productsLoading } = useQuery({
     queryKey: ['/api/products', user?.id],
     queryFn: () =>
-      productAPI
-        .getProducts({ vendorId: user?.id })
+      productAPI.getProducts({ vendorId: user?.id })
         .then(res => res.data),
     enabled: !!user?.id,
+  });
+
+  // Fetch single product only if ID exists
+  const { data: product, isLoading: productLoading } = useQuery({
+    queryKey: ["/products", id],
+    queryFn: () => productAPI.getProduct(id).then(res => res.data),
+    enabled: !!id,
   });
 
   // Fetch categories
@@ -116,16 +140,13 @@ export default function VendorDashboard() {
   });
 
   // Fetch vendor's Orders
-  const { data: orders, isLoading: ordersLoading, error: ordersError, } = useQuery({
-    queryKey: ['vendor-orders', user?.id],
-    queryFn: () =>
-      orderAPI.getOrders().then(res => res.data)
-        .then(all => {
-          // keep only orders where vendorId matches
-          return all.filter(order => order.vendorId === user?.id);
-        }),
-    enabled: !!user?.id,
+  const { data: orders, isLoading: ordersLoading, isError: ordersError } = useQuery({
+    queryKey: ["vendor-orders"],
+    queryFn: () => orderAPI.getOrders().then(res => res.data),
+    enabled: !!user && user.role === "vendor",
   });
+
+  // console.log(orders)
 
   //incoming Rfqs
   const { data: incomingRfqs, isLoading, error } = useQuery({
@@ -177,6 +198,65 @@ export default function VendorDashboard() {
       </div>
     );
   }
+
+  useEffect(() => {
+    if (product) {
+      setActiveProduct(product);
+    }
+  }, [product]);
+
+ useEffect(() => {
+    // 1️⃣ Connect socket when component mounts
+    if (!socket.connected) {
+      socket.connect();
+    }
+
+    // 2️⃣ When socket connects, join room
+    socket.on("connect", () => {
+      console.log("🟢 Socket connected:", socket.id);
+
+      if (id && product?.id) {
+        const negotiation = negotiations?.find(
+          n => n.productId === product.id && n.isActive
+        );
+
+        if (negotiation) {
+          // console.log(`[SOCKET] Vendor joining negotiation room: ${negotiation.id}`);
+          socket.emit("joinNegotiationRoom", negotiation.id);
+        } else {
+          console.log("[SOCKET] No active negotiation found for this product");
+        }
+      }
+    });
+
+     socket.on("negotiation:new", (data) => {
+    console.log("📩 New negotiation notification:", data);
+    toast({
+      title: "New Negotiation",
+      description: `${data.buyerName} started a negotiation for ${data.productName}`,
+    });
+    // Optionally update state to show the negotiation in a list
+  });
+
+    // 4️⃣ Cleanup on unmount
+    return () => {
+      console.log("🔴 Disconnecting socket");
+      socket.off("connect");
+     socket.off("negotiation:new");
+      socket.disconnect();
+    };
+  }, []);
+
+if (id) {
+  if (productLoading) return <p>Loading product...</p>;
+  if (!product) return <p>Product not found</p>;
+
+  return (
+    <div>
+      <NegotiationChat product={product} />
+    </div>
+  );
+}
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -257,14 +337,24 @@ export default function VendorDashboard() {
         </div>
 
         {/* Main Content */}
-        <Tabs defaultValue="products" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5">
-            <TabsTrigger value="products">Products</TabsTrigger>
-            <TabsTrigger value="orders">Orders</TabsTrigger>
-            <TabsTrigger value="rfqs">RFQs</TabsTrigger>
-            <TabsTrigger value="incoming-rfqs">IncomingRFQs</TabsTrigger>
-            <TabsTrigger value="analytics">Analytics</TabsTrigger>
-          </TabsList>
+<Tabs defaultValue="products" className="space-y-10">
+  <TabsList className="flex flex-wrap gap-0 w-full bg-gray-100 p-2 rounded">
+    {[
+      ["products", "Products"],
+      ["orders", "Orders"],
+      ["rfqs", "RFQs"],
+      ["incoming-rfqs", "Your RFQs"],
+      ["negotiations", "Negotiations"]
+    ].map(([value, label]) => (
+      <TabsTrigger
+        key={value}
+        value={value}
+        className="flex-1 min-w-[100px] text-center text-sm sm:text break-words whitespace-nowrap"
+      >
+        {label}
+      </TabsTrigger>
+    ))}
+  </TabsList>
 
           <TabsContent value="products" className="space-y-6">
             <div className="flex justify-between items-center">
@@ -415,17 +505,34 @@ export default function VendorDashboard() {
                 <div className="col-span-full text-center py-12">
                   <Package className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                   <h3 className="text-lg font-medium text-gray-900 mb-2">No products yet</h3>
-                  <p className="text-gray-600 mb-4">Get started by adding your first product to the marketplace.</p>
+                  <p className="text-gray-600 mb-4">
+                    Get started by adding your first product to the marketplace.
+                  </p>
                   <Button onClick={() => setIsAddProductOpen(true)}>
                     <Plus className="w-4 h-4 mr-2" />
                     Add Your First Product
                   </Button>
                 </div>
               ) : (
-                products?.map((product) => (
-                  <ProductCard key={product.id} product={product} showVendorActions />
-                ))
+                <>
+                  {products?.map((p) => (
+                    <ProductCard
+                      key={p.id}
+                      product={p}
+                      onOpenNegotiation={() => {
+                        setActiveProduct(p);
+                        setIsNegotiationOpen(true);
+                      }}
+
+                    />
+                  ))}
+
+                  {isNegotiationOpen && (
+                    <NegotiationChat product={activeProduct} />
+                  )}
+                </>
               )}
+
             </div>
           </TabsContent>
 
@@ -537,7 +644,66 @@ export default function VendorDashboard() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="analytics">
+          <TabsContent value="negotiations" className="space-y-6">
+            <div className="flex justify-between items-center">
+              <h2 className="text-xl font-semibold text-gray-900">
+                Price Negotiations{" "}
+                {unreadCount > 0 && <span className="ml-2 text-red-500">({unreadCount})</span>}
+              </h2>
+            </div>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Active Negotiations</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {negotiations.length > 0 ? (
+                  negotiations.map((n) => {
+                    const lastMessage = n.messages?.[n.messages.length - 1]?.message || "No messages yet";
+                    return (
+                      <div key={n.id} className="p-3 border-b last:border-none flex justify-between items-center">
+                        <div>
+                          <p className="font-medium">{lastMessage}</p>
+                          <p className="text-sm text-gray-500">
+                            Product ID: {n.productId} | Buyer ID: {n.buyerId}
+                          </p>
+                        </div>
+
+                        <div>
+                          {(() => {
+                            const product = products?.find(p => p.id === n.productId);
+                            if (!product) return null;
+
+                            return (
+                              <Button onClick={() => window.location.href = `/vendor-dashboard/${product.id}`}>
+                                Start
+                              </Button>
+                            );
+                          })()}
+                        </div>
+
+                      </div>
+                    );
+                  })
+                ) : (
+                  <p className="text-gray-500">No active negotiations yet.</p>
+                )}
+              </CardContent>
+            </Card>
+
+            {isNegotiationOpen && activeNegotiationId && (
+              <Dialog open={isNegotiationOpen} onOpenChange={setIsNegotiationOpen}>
+                <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+                  <DialogHeader>
+                    <DialogTitle>Negotiation Chat</DialogTitle>
+                  </DialogHeader>
+                  <NegotiationChat negotiationId={activeNegotiationId} />
+                </DialogContent>
+              </Dialog>
+            )}
+          </TabsContent>
+
+          {/* <TabsContent value="analytics">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card>
                 <CardHeader>
@@ -563,7 +729,7 @@ export default function VendorDashboard() {
                 </CardContent>
               </Card>
             </div>
-          </TabsContent>
+          </TabsContent> */}
         </Tabs>
       </div>
     </div>

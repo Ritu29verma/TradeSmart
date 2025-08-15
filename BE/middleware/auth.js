@@ -4,7 +4,7 @@ import { storage } from "../storage.js";
 export const authenticateToken = async (req, res, next) => {
   try {
     const token = authService.extractTokenFromHeader(req.headers.authorization);
-    console.log("Incoming auth headers:", req.headers.authorization);
+    // console.log("Incoming auth headers:", req.headers.authorization);
     if (!token) {
       return res.status(401).json({ message: "Access token required" });
     }
@@ -40,7 +40,7 @@ export const requireRole = (roles) => {
 export const optionalAuth = async (req, res, next) => {
   try {
     const token = authService.extractTokenFromHeader(req.headers.authorization);
-    console.log("Incoming auth headers:", req.headers.authorization);
+    // console.log("Incoming auth headers:", req.headers.authorization);
     if (token) {
       const decoded = authService.verifyToken(token);
       const user = await storage.getUser(decoded.id);
