@@ -150,11 +150,24 @@ export default function BuyerDashboard({
       }
     });
 
-    // 4️⃣ Cleanup on unmount
+    socket.on("deal:accepted", ({ negotiationId }) => {
+    console.log("📉 Negotiation closed:", negotiationId);
+
+    // Remove from active negotiations immediately
+    queryClient.setQueryData(["buyer-negotiations"], (old = []) =>
+      old.filter(n => n.id !== negotiationId)
+    );
+
+    toast({
+      title: "Negotiation Closed",
+      description: "Your deal was accepted and moved out of active negotiations.",
+    });
+  });
+
     return () => {
       console.log("🔴 Disconnecting socket");
       socket.off("connect");
-      // socket.off("negotiation:message");
+      socket.off("deal:accepted");
       socket.disconnect();
     };
   }, [id, product, negotiations]);

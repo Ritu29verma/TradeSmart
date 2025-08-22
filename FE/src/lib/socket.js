@@ -1,10 +1,10 @@
-// src/lib/socket.js
-// socket.js (frontend)
 import { io } from "socket.io-client";
 
-export const socket = io(import.meta.env.NEXT_PUBLIC_BACKEND_URL, {
-  transports: ["websocket"], // force WS to avoid polling delays
+export const socket = io(import.meta.env.VITE_BACKEND_URL, {
+  transports: ["websocket", "polling"], 
   withCredentials: true,
+  reconnectionAttempts: 5,
+  reconnectionDelay: 1000,
 });
 
 
@@ -12,6 +12,24 @@ export const joinNegotiationRoom = (negotiationId) => {
   console.log("[SOCKET] Joining negotiation room:", negotiationId);
 socket.emit("joinNegotiationRoom",  negotiationId );
 };
+
+socket.on("negotiation:message", (data) => {
+  console.log("[SOCKET] New negotiation message:", data);
+});
+
+// ✅ Listen for deal acceptance
+socket.on("deal:accepted", (data) => {
+  console.log("[SOCKET] Deal accepted:", data);
+
+  // Example: update UI / toast
+  if (window?.toast) {
+    window.toast({
+      title: "Deal Accepted",
+      description: data.message,
+    });
+  }
+});
+
 
 socket.on("connect", () => {
   console.log("✅ Socket connected:", socket.id);

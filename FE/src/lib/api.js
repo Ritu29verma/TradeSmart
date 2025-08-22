@@ -52,6 +52,7 @@ export const userAPI = {
 export const productAPI = {
   getProducts: (params) => api.get('/products', { params }),
   getProduct: (id) => api.get(`/products/${id}`),
+  getProductsByVendor:(id) => api.get(`/vendors/${id}/products`),
   createProduct: (product) => api.post('/products', product),
   updateProduct: (id, updates) => api.put(`/products/${id}`, updates),
   deleteProduct: (id) => api.delete(`/products/${id}`),

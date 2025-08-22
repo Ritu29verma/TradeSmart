@@ -124,6 +124,13 @@ export class DatabaseStorage {
     return product || undefined;
   }
 
+async getProductsByVendor(vendorId) {
+  return await db
+    .select()
+    .from(products)
+    .where(eq(products.vendorId, vendorId));
+}
+
   async createProduct(insertProduct) {
     const [product] = await db
       .insert(products)

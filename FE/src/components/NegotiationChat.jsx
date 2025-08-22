@@ -7,29 +7,31 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { 
-  Send, 
-  Brain, 
-  User, 
-  Building, 
-  CheckCircle, 
+import {
+  Send,
+  Brain,
+  User,
+  Building,
+  CheckCircle,
   DollarSign,
   TrendingUp,
   MessageSquare
 } from "lucide-react";
+import { useLocation } from "wouter";
 import { negotiationAPI, queryClient } from "@/lib/api";
 import { authManager } from "@/lib/auth";
-import { socket, joinNegotiationRoom} from "@/lib/socket";
+import { socket, joinNegotiationRoom } from "@/lib/socket";
 
 export default function NegotiationChat({ product }) {
   const { toast } = useToast();
   const [messages, setMessages] = useState([]);
-const [message, setMessage] = useState("");
+  const [message, setMessage] = useState("");
   const [offer, setOffer] = useState("");
   const [selectedOfferId, setSelectedOfferId] = useState(null);
   const messagesEndRef = useRef(null);
-  const messagesContainerRef = useRef(null);   
+  const messagesContainerRef = useRef(null);
   const user = authManager.getUser();
+  const [, navigate] = useLocation();
 
   // Find existing negotiation for this product
   const { data: negotiations, isLoading } = useQuery({
@@ -42,37 +44,51 @@ const [message, setMessage] = useState("");
   );
 
   const negotiationId = currentNegotiation?.id;
-const userRole = user?.role; // or manually set 'buyer' / 'vendor'
-const userId = user?.id;
+  const userRole = user?.role; // or manually set 'buyer' / 'vendor'
+  const userId = user?.id;
 
-// console.log(negotiationId)
-useEffect(() => {
-  if (!negotiationId) return;
+  // console.log(negotiationId)
+  useEffect(() => {
+    if (!negotiationId) return;
 
-negotiationAPI.getNegotiationById(negotiationId).then(res => {
-  // console.log("API response:", res.data);
-  setMessages(res.data.messages || []);
-});
+    negotiationAPI.getNegotiationById(negotiationId).then(res => {
+      // console.log("API response:", res.data);
+      setMessages(res.data.messages || []);
+    });
 
-  console.log(`[SOCKET] Joining negotiation room: ${negotiationId}`);
-  socket.emit("joinNegotiationRoom", negotiationId );
+    console.log(`[SOCKET] Joining negotiation room: ${negotiationId}`);
+    socket.emit("joinNegotiationRoom", negotiationId);
 
-  const handleNewMessage = (data) => {
-    // console.log("[SOCKET] New message received:", data);
-    setMessages(prev => [...prev, data]);
-  };
+    const handleNewMessage = (data) => {
+      // console.log("[SOCKET] New message received:", data);
+      setMessages(prev => [...prev, data]);
+    };
 
-  socket.on("negotiation:message", handleNewMessage);
+    socket.on("negotiation:message", handleNewMessage);
+    socket.on("accept-deal", (msg) => {
+    setMessages((prev) => [...prev, msg]);
 
-  return () => {
-    socket.off("negotiation:message", handleNewMessage);
-  };
-}, [negotiationId]);
+    // If the other side accepted, redirect both
+    setTimeout(() => {
+      if (user?.role === "vendor") {
+        navigate("/vendor-dashboard");
+      }
+      if (user?.role === "buyer") {
+        navigate("/buyer-dashboard");
+      }
+    }, 1000);
+  });
+
+    return () => {
+      socket.off("negotiation:message", handleNewMessage);
+      socket.off("accept-deal");
+    };
+  }, [negotiationId, user]);
 
 
   // Send message mutation
   const sendMessageMutation = useMutation({
-    mutationFn: ({ id, message, offer }) => 
+    mutationFn: ({ id, message, offer }) =>
       negotiationAPI.sendMessage(id, { message, offer }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/negotiations"] });
@@ -90,7 +106,7 @@ negotiationAPI.getNegotiationById(negotiationId).then(res => {
 
   // AI negotiate mutation
   const aiNegotiateMutation = useMutation({
-    mutationFn: ({ id, message }) => 
+    mutationFn: ({ id, message }) =>
       negotiationAPI.aiNegotiate(id, message),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/negotiations"] });
@@ -125,42 +141,151 @@ negotiationAPI.getNegotiationById(negotiationId).then(res => {
 
 
   useEffect(() => {
-  messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-}, [messages]); // track `messages` state
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]); // track `messages` state
 
-useEffect(() => {
-  if (messagesContainerRef.current) {
-    messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
-  }
-}, [messages]);
+  useEffect(() => {
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+    }
+  }, [messages]);
 
+// const handleAcceptDealClick = async () => {
+//   const isVendor = user?.role === "vendor";
+//   const isBuyer = user?.role === "buyer";
+//    if (!currentNegotiation) {
+//     toast({
+//       variant: "destructive",
+//       title: "No negotiation found",
+//     });
+//     return;
+//   }
 
-const handleSendMessage = (e) => {
-  e.preventDefault();
+//   // Create acceptance message
+//   const acceptanceMessage = {
+//     negotiationId: currentNegotiation.id, 
+//     sender: user?.role,
+//     message: isVendor 
+//       ? "Vendor has accepted your offer ✅"
+//       : "Buyer has accepted your offer ✅",
+//     timestamp: new Date().toISOString(),
+//   };
 
-  if (!currentNegotiation?.isActive) {
+//   // Send to backend (via socket or API)
+//   socket.emit("accept-deal", acceptanceMessage);
+  
+//   // Update own chat immediately (optimistic update)
+//   setMessages((prev) => [...prev, acceptanceMessage]);
+
+//   try {
+//     if (currentNegotiation) {
+//       // Accept existing negotiation
+//       await handleAcceptDeal();
+//     } else {
+//       // Directly create an order
+//       const order = await orderAPI.createOrder({
+//         productId: product.id,
+//         quantity,
+//         unitPrice: product.price,
+//       });
+
+//       toast({
+//         title: "Order placed!",
+//         description: `Your order for ${product.name} has been created.`,
+//       });
+//     }
+
+//     // Redirect both roles after short delay
+//     setTimeout(() => {
+//       if (isVendor) {
+//         navigate("/vendor-dashboard");
+//       }
+//       if (isBuyer) {
+//         navigate("/buyer-dashboard");
+//       }
+//     }, 2000);
+//   } catch (error) {
+//     toast({
+//       variant: "destructive",
+//       title: "Error creating order",
+//       description: error.response?.data?.message || "Failed to place order",
+//     });
+//   }};
+
+const handleAcceptDealClick = async () => {
+  const isVendor = user?.role === "vendor";
+  const isBuyer = user?.role === "buyer";
+
+  if (!currentNegotiation) {
     toast({
       variant: "destructive",
-      title: "No active negotiation",
-      description: "Start a negotiation before sending a message."
+      title: "No negotiation found",
     });
     return;
   }
-  if (!message.trim() && !offer) return;
 
-  const offerValue = offer ? parseFloat(offer) : null;
+  // Create acceptance message
+  const acceptanceMessage = {
+    negotiationId: currentNegotiation.id,   // 🔑 add this
+    sender: user?.role,
+    message: isVendor
+      ? "Vendor has accepted your offer ✅"
+      : "Buyer has accepted your offer ✅",
+    timestamp: new Date().toISOString(),
+  };
 
-  // Just call API → backend will emit via socket
-  sendMessageMutation.mutate({
-    id: currentNegotiation.id,
-    message: message || (offerValue ? `I'd like to offer $${offerValue}` : ""),
-    offer: offerValue
-  });
+  // Send to backend via socket
+  socket.emit("accept-deal", acceptanceMessage);
+
+  // Optimistic update in own chat
+  setMessages((prev) => [...prev, acceptanceMessage]);
 };
+
+// ✅ Listen for acceptance on FE (both buyer & vendor)
+useEffect(() => {
+  socket.on("deal:accepted", ({ negotiationId, sender, message }) => {
+    setMessages((prev) => [...prev, { sender, message, timestamp: new Date().toISOString() }]);
+
+    // Redirect both roles
+    if (user?.role === "vendor") {
+      navigate("/vendor-dashboard");
+    }
+    if (user?.role === "buyer") {
+      navigate("/buyer-dashboard");
+    }
+  });
+
+  return () => {
+    socket.off("deal:accepted");
+  };
+}, [user, navigate]);
+
+  const handleSendMessage = (e) => {
+    e.preventDefault();
+
+    if (!currentNegotiation?.isActive) {
+      toast({
+        variant: "destructive",
+        title: "No active negotiation",
+        description: "Start a negotiation before sending a message."
+      });
+      return;
+    }
+    if (!message.trim() && !offer) return;
+
+    const offerValue = offer ? parseFloat(offer) : null;
+
+    // Just call API → backend will emit via socket
+    sendMessageMutation.mutate({
+      id: currentNegotiation.id,
+      message: message || (offerValue ? `I'd like to offer $${offerValue}` : ""),
+      offer: offerValue
+    });
+  };
 
   const handleAiNegotiate = () => {
     if (!message.trim()) return;
-    
+
     aiNegotiateMutation.mutate({
       id: currentNegotiation.id,
       message
@@ -175,46 +300,58 @@ const handleSendMessage = (e) => {
   const formatPrice = (price) => {
     return parseFloat(price).toLocaleString();
   };
+  
+  // console.log(messages)
+  const lastMessage = messages[messages.length - 1];
+  const isVendor = user?.role === "vendor";
+  const isBuyer = user?.role === "buyer";
+  let canAcceptDeal = false;
+
+  if (lastMessage) {
+    if (lastMessage.sender === "vendor" && isBuyer) {
+      canAcceptDeal = true;
+    }
+    if (lastMessage.sender === "buyer" && isVendor) {
+      canAcceptDeal = true;
+    }
+  }
 
   const renderMessage = (msg, index) => {
     const isUser = msg.senderId === user.id;
     const isAI = msg.sender === 'ai';
     const isVendor = msg.sender === 'vendor';
-     const isBuyer = msg.sender === 'buyer';
+    const isBuyer = msg.sender === 'buyer';
 
     return (
       <div key={index} className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}>
         <div className={`flex items-start space-x-3 max-w-xs ${isUser ? 'flex-row-reverse space-x-reverse' : ''}`}>
           <Avatar className="w-8 h-8 flex-shrink-0">
-            <AvatarFallback className={`text-xs ${
-              isAI ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white' :
-              isUser ? 'bg-blue-500 text-white' :
-              'bg-green-600 text-white'
-            }`}>
+            <AvatarFallback className={`text-xs ${isAI ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white' :
+                isUser ? 'bg-blue-500 text-white' :
+                  'bg-green-600 text-white'
+              }`}>
               {isAI ? 'AI' : isVendor ? 'V' : 'B'}
             </AvatarFallback>
           </Avatar>
-          
-          <div className={`rounded-lg px-4 py-2 ${
-            isUser ? 'bg-blue-600 text-white' :
-            isAI ? 'bg-gray-100 border border-blue-200' :
-            'bg-green-50 border border-green-200'
-          }`}>
+
+          <div className={`rounded-lg px-4 py-2 ${isUser ? 'bg-blue-600 text-white' :
+              isAI ? 'bg-gray-100 border border-blue-200' :
+                'bg-green-50 border border-green-200'
+            }`}>
             <p className={`text-sm ${isUser ? 'text-white' : 'text-gray-800'}`}>
               {msg.message}
             </p>
-            
+
             {msg.offer && (
-              <div className={`mt-2 p-2 rounded ${
-                isUser ? 'bg-blue-500 bg-opacity-50' : 'bg-blue-50'
-              }`}>
+              <div className={`mt-2 p-2 rounded ${isUser ? 'bg-blue-500 bg-opacity-50' : 'bg-blue-50'
+                }`}>
                 <div className="flex items-center space-x-2">
                   <DollarSign className="w-4 h-4" />
                   <span className="font-semibold">${formatPrice(msg.offer)}</span>
                 </div>
               </div>
             )}
-            
+
             {msg.aiData && (
               <div className="mt-3 space-y-2">
                 {msg.aiData.recommendation === 'accept' && (
@@ -228,7 +365,7 @@ const handleSendMessage = (e) => {
                     Accept Deal
                   </Button>
                 )}
-                
+
                 <div className="text-xs text-gray-600 bg-white bg-opacity-50 rounded p-2">
                   <div className="flex items-center space-x-1 mb-1">
                     <Brain className="w-3 h-3" />
@@ -238,10 +375,9 @@ const handleSendMessage = (e) => {
                 </div>
               </div>
             )}
-            
-            <span className={`text-xs mt-1 block ${
-              isUser ? 'text-blue-200' : 'text-gray-500'
-            }`}>
+
+            <span className={`text-xs mt-1 block ${isUser ? 'text-blue-200' : 'text-gray-500'
+              }`}>
               {new Date(msg.timestamp).toLocaleTimeString()}
             </span>
           </div>
@@ -297,21 +433,21 @@ const handleSendMessage = (e) => {
       {/* Messages */}
       <Card>
         <CardContent className="p-4">
-         <div 
-  className="h-96 overflow-y-auto space-y-4 mb-4" 
-  ref={messagesContainerRef} 
->
-  {messages.length === 0 ? (
-    <div className="text-center py-8">
-      <MessageSquare className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-      <p className="text-gray-600">Start the conversation by sending a message.</p>
-    </div>
-  ) : (
-    messages.map((msg, index) => renderMessage(msg, index))
-  )}
-  {/* <div ref={messagesEndRef} /> */}
+          <div
+            className="h-96 overflow-y-auto space-y-4 mb-4"
+            ref={messagesContainerRef}
+          >
+            {messages.length === 0 ? (
+              <div className="text-center py-8">
+                <MessageSquare className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <p className="text-gray-600">Start the conversation by sending a message.</p>
+              </div>
+            ) : (
+              messages.map((msg, index) => renderMessage(msg, index))
+            )}
+            {/* <div ref={messagesEndRef} /> */}
 
-</div>
+          </div>
 
           {/* Input Form */}
           {currentNegotiation.isActive && (
@@ -332,17 +468,27 @@ const handleSendMessage = (e) => {
                   className="w-24"
                 />
               </div>
-              
+
               <div className="flex space-x-2">
-                <Button 
-                  type="submit" 
+                <Button
+                  type="submit"
                   disabled={sendMessageMutation.isPending || (!message.trim() && !offer)}
                   className="flex-1"
                 >
                   <Send className="w-4 h-4 mr-2" />
                   {sendMessageMutation.isPending ? "Sending..." : "Send"}
                 </Button>
-                
+
+                <Button
+                  size="sm"
+                  onClick={handleAcceptDealClick}
+                  disabled={!canAcceptDeal || acceptNegotiationMutation.isPending}
+                  className=" text-xs flex-1"
+                >
+                  <CheckCircle className="w-3 h-3 mr-1" />
+                  Accept Deal
+                </Button>
+
                 <Button
                   type="button"
                   variant="outline"

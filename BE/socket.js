@@ -10,6 +10,11 @@ export function initSocket(server) {
       }
     });
 
+    io.engine.on("connection_error", (err) => {
+  console.log("Engine connection error:", err.code, err.message);
+});
+
+
  io.on("connection", (socket) => {
     console.log("🟢 New client connected", socket.id);
 
@@ -35,6 +40,25 @@ export function initSocket(server) {
     });
   });
 
+   socket.on("accept-deal", async ({ negotiationId, sender, message }) => {
+        console.log(`🤝 Deal accepted in negotiation ${negotiationId}`);
+
+        // (optional) Save acceptance to DB
+        await storage.addNegotiationMessage(negotiationId, {
+          sender,
+          message,
+          type: "deal-accepted",
+        });
+
+        // Notify everyone in the room
+        io.to(`negotiation_${negotiationId}`).emit("deal:accepted", {
+          negotiationId,
+          sender,
+          message,
+          timestamp: new Date().toISOString(),
+        });
+      });
+
     socket.on("disconnect", () => {
         console.log("🔴 Client disconnected");
     });
@@ -43,4 +67,7 @@ export function initSocket(server) {
     // Return io so it can be used in routes
     server.app.set("io", io);
   });
+
+  
 }
+

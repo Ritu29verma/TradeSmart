@@ -34,7 +34,7 @@ export default function ProductDetails() {
   const [isNegotiationOpen, setIsNegotiationOpen] = useState(false);
   const [isRFQOpen, setIsRFQOpen] = useState(false);
   const [quantity, setQuantity] = useState(1);
-   const [, navigate] = useLocation();
+  const [, navigate] = useLocation();
 
   const user = authManager.getUser();
 
@@ -47,12 +47,31 @@ export default function ProductDetails() {
     },
     enabled: !!id,
   });
+  // console.log(product);
 
   const { data: negotiations = [], isLoading: negotiationsLoading } = useQuery({
     queryKey: ['/negotiations'],
     queryFn: () => negotiationAPI.getNegotiations().then(res => res.data),
     enabled: !!user && user.role === "buyer",
   });
+
+const negotiation = product
+  ? negotiations?.find(n => n.productId === product.id)
+  : null;
+
+  let buttonLabel = "Negotiate Price";
+  let disabled = false;
+
+  if (negotiation) {
+    if (negotiation.isActive) {
+      buttonLabel = "Negotiation in Progress";
+      disabled = true;
+    } else {
+      // negotiation closed (deal accepted / ordered)
+      buttonLabel = "Negotiate Price";
+      disabled = false;
+    }
+  }
 
   useEffect(() => {
     if (product) {
@@ -84,20 +103,38 @@ export default function ProductDetails() {
       }
     });
 
-    // 3️⃣ Listen for messages
-    socket.on("negotiation:message", (data) => {
-      // console.log("📩 New message received:", data);
-      // update state with the new message here
+    socket.on("deal:accepted", ({ negotiationId }) => {
+      console.log("✅ Deal accepted for negotiation", negotiationId);
+
+      // remove negotiation from active list
+      queryClient.setQueryData(['/negotiations'], (old = []) =>
+        old.map(n =>
+          n.id === negotiationId ? { ...n, isActive: false } : n
+        )
+      );
+
+      toast({
+        title: "Deal Accepted",
+        description: "This negotiation has been closed.",
+      });
+
+      // redirect to dashboard
+      if (user?.role === "buyer") {
+        navigate("/buyer-dashboard");
+      } else {
+        navigate("/vendor-dashboard");
+      }
     });
+
 
     // 4️⃣ Cleanup on unmount
     return () => {
       console.log("🔴 Disconnecting socket");
       socket.off("connect");
-      socket.off("negotiation:message");
+      socket.off("deal:accepted");
       socket.disconnect();
     };
-  }, [id, product, negotiations]);
+  }, [id, product, negotiations, navigate, user]);
 
   // Start negotiation mutation
   const startNegotiationMutation = useMutation({

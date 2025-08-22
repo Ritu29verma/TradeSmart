@@ -22,9 +22,7 @@ export default function Marketplace() {
     error: productError,
   } = useQuery({
     queryKey: ["products", searchTerm, selectedCategory, sortBy],
-    queryFn: () =>
-      productAPI
-        .getProducts({
+    queryFn: () => productAPI.getProducts({
           search: searchTerm || undefined,
           categoryId: selectedCategory !== "all" ? selectedCategory : undefined,
         })
@@ -59,8 +57,7 @@ export default function Marketplace() {
     setSortBy("newest");
   };
 
-  const filteredAndSortedProducts = products
-    ?.filter((product) => {
+  const filteredAndSortedProducts = products?.filter((product) => {
       const matchesSearch =
         !searchTerm ||
         product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||

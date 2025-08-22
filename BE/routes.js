@@ -197,7 +197,21 @@ export async function registerRoutes(app) {
     }
   });
 
-  app.get("/api/products/:id", optionalAuth, async (req, res) => {
+  app.post("/api/products", authenticateToken, requireRole(['vendor']), async (req, res) => {
+    try {
+      const productData = {
+        ...req.body,
+        vendorId: req.user.id
+      };
+
+      const product = await storage.createProduct(productData);
+      res.status(201).json(product);
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+    app.get("/api/products/:id", optionalAuth, async (req, res) => {
     try {
       const product = await storage.getProduct(req.params.id);
       if (!product) {
@@ -213,19 +227,16 @@ export async function registerRoutes(app) {
     }
   });
 
-  app.post("/api/products", authenticateToken, requireRole(['vendor']), async (req, res) => {
-    try {
-      const productData = {
-        ...req.body,
-        vendorId: req.user.id
-      };
+  app.get("/api/vendors/:vendorId/products", optionalAuth, async (req, res) => {
+  try {
+    const { vendorId } = req.params;
+    const products = await storage.getProductsByVendor(vendorId);
 
-      const product = await storage.createProduct(productData);
-      res.status(201).json(product);
-    } catch (error) {
-      res.status(500).json({ message: error.message });
-    }
-  });
+    res.json(products);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
 
   app.put("/api/products/:id", authenticateToken, requireRole(['vendor']), async (req, res) => {
     try {

@@ -73,13 +73,21 @@ export default function VendorDashboard() {
 
 
   // Fetch vendor's products
+  // const { data: products, isLoading: productsLoading } = useQuery({
+  //   queryKey: ['/api/products', user?.id],
+  //   queryFn: () =>
+  //     productAPI.getProduct({ vendorId: user?.id })
+  //       .then(res => res.data),
+  //   enabled: !!user?.id,
+  // });
+
   const { data: products, isLoading: productsLoading } = useQuery({
-    queryKey: ['/api/products', user?.id],
-    queryFn: () =>
-      productAPI.getProducts({ vendorId: user?.id })
-        .then(res => res.data),
-    enabled: !!user?.id,
-  });
+  queryKey: ['/api/vendors', user?.id, 'products'],
+  queryFn: () =>
+    productAPI.getProductsByVendor(user?.id).then(res => res.data),
+  enabled: !!user?.id,
+});
+
 
   // Fetch single product only if ID exists
   const { data: product, isLoading: productLoading } = useQuery({

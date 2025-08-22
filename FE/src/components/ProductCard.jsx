@@ -17,11 +17,13 @@ import {
 } from "lucide-react";
 import { productAPI, queryClient } from "@/lib/api";
 import { authManager } from "@/lib/auth";
+import ProductFormDialog from "./ProductFormDialog";
 
-export default function ProductCard({ product, showVendorActions = false }) {
+export default function ProductCard({ product}) {
   const { toast } = useToast();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const user = authManager.getUser();
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
   // Delete product mutation
   const deleteProductMutation = useMutation({
@@ -48,6 +50,23 @@ export default function ProductCard({ product, showVendorActions = false }) {
     deleteProductMutation.mutate(product.id);
   };
 
+  const updateProductMutation = useMutation({
+    mutationFn: ({ id, updates }) => productAPI.updateProduct(id, updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/vendor-stats"] });
+      setIsEditDialogOpen(false);
+      toast({ title: "Product updated", description: "Your product has been updated." });
+    },
+    onError: (error) => {
+      toast({
+        variant: "destructive",
+        title: "Error updating product",
+        description: error.response?.data?.message || "An error occurred",
+      });
+    },
+  });
+
   const getCategoryColor = (category) => {
     const colors = {
       "Industrial Equipment": "blue",
@@ -66,6 +85,9 @@ export default function ProductCard({ product, showVendorActions = false }) {
     if (!original) return 0;
     return Math.round(((original - current) / original) * 100);
   };
+
+//   console.log("user", user);
+// console.log("product.vendorId", product.vendorId);
 
   return (
     <Card className="group hover:shadow-lg transition-all duration-300 overflow-hidden">
@@ -89,11 +111,11 @@ export default function ProductCard({ product, showVendorActions = false }) {
           </Badge>
           
           <div className="flex items-center space-x-1">
-            {showVendorActions && user?.id === product.vendorId ? (
+            { user?.id === product.vendorId ? (
               <div className="flex space-x-1">
-                <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                {/* <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
                   <Edit className="w-3 h-3" />
-                </Button>
+                </Button> */}
                 <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
                   <DialogTrigger asChild>
                     <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-red-600 hover:text-red-700">
@@ -172,7 +194,7 @@ export default function ProductCard({ product, showVendorActions = false }) {
         </div>
         
         {/* Vendor and Location */}
-        {!showVendorActions && (
+        {!user?.id === product.vendorId && (
           <div className="flex items-center justify-between text-sm text-gray-600 mb-3">
             <span>{product.vendor?.companyName || "Vendor"}</span>
             <span>{product.location || "Location"}</span>
@@ -180,7 +202,7 @@ export default function ProductCard({ product, showVendorActions = false }) {
         )}
 
         {/* Product Stats for Vendor */}
-        {showVendorActions && (
+        {user?.id === product.vendorId && (
           <div className="flex items-center justify-between text-sm text-gray-600 mb-3">
             <div className="flex items-center space-x-3">
               <div className="flex items-center space-x-1">
@@ -200,16 +222,24 @@ export default function ProductCard({ product, showVendorActions = false }) {
         
         {/* Action Buttons */}
         <div className="flex space-x-2">
-          {showVendorActions ? (
+          {user?.id === product.vendorId ? (
             <>
-              <Button size="sm" variant="outline" className="flex-1">
-                <Edit className="w-3 h-3 mr-2" />
-                Edit
-              </Button>
-              <Button size="sm" className="flex-1">
-                View Details
-              </Button>
-            </>
+            {/* Edit Product Dialog */}
+            <ProductFormDialog
+              open={isEditDialogOpen}
+              onOpenChange={setIsEditDialogOpen}
+              initialData={product}
+              onSubmit={(updates) => updateProductMutation.mutate({ id: product.id, updates })}
+              loading={updateProductMutation.isPending}
+            />
+            <Button size="sm" variant="outline" className="flex-1" onClick={() => setIsEditDialogOpen(true)}>
+              <Edit className="w-3 h-3 mr-2" />
+              Edit
+            </Button>
+            <Button size="sm" className="flex-1">
+              View Details
+            </Button>
+          </>
           ) : (
             <>
               <Button size="sm" className="flex-1">
