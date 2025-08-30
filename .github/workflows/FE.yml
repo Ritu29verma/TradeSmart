@@ -6,6 +6,11 @@ on:
       - 'FE/**'
     branches:
       - main
+  pull_request:
+    paths:
+      - 'FE/**'
+    branches:
+      - main
 
 jobs:
   frontend-ci-cd:
@@ -21,7 +26,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20   # 👈 match your local version
+          node-version: 20
 
       - name: Install dependencies
         run: npm install
@@ -32,7 +37,8 @@ jobs:
       - name: Install Vercel CLI
         run: npm install -g vercel
 
-      - name: Deploy Frontend (only if tests & build pass)
+      - name: Deploy Frontend (only on push to main after successful build)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: vercel deploy --prod \
           --token=${{ secrets.VERCEL_TOKEN }} \
           --scope=${{ secrets.VERCEL_ORG_ID }} \
