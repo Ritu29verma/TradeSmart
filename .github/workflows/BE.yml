@@ -7,6 +7,12 @@ on:
     branches:
       - main
 
+  pull_request:
+    paths:
+      - 'BE/**'
+    branches:
+      - main
+
 jobs:
   backend-ci-cd:
     runs-on: ubuntu-latest
@@ -32,9 +38,11 @@ jobs:
       - name: Install Vercel CLI
         run: npm install -g vercel
 
-      - name: Deploy Backend (only if tests pass)
-        run: vercel deploy --prod --cwd=BE \
-          --token=${{ secrets.VERCEL_TOKEN }} \
-          --scope=${{ secrets.VERCEL_ORG_ID }} \
-          --project=${{ secrets.VERCEL_PROJECT_ID_BE }} \
-          --yes --confirm
+      - name: Deploy Backend (only if tests pass and merged to main)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: vercel deploy --prod \
+            --token=${{ secrets.VERCEL_TOKEN }} \
+            --scope=${{ secrets.VERCEL_ORG_ID }} \
+            --project=${{ secrets.VERCEL_PROJECT_ID_BE }} \
+            --yes --confirm
+
