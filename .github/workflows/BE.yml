@@ -33,7 +33,7 @@ jobs:
         run: npm install -g vercel
 
       - name: Deploy Backend (only if tests pass)
-        run: vercel deploy --prod --cwd=backend \
+        run: vercel deploy --prod --cwd=BE \
           --token=${{ secrets.VERCEL_TOKEN }} \
           --scope=${{ secrets.VERCEL_ORG_ID }} \
           --project=${{ secrets.VERCEL_PROJECT_ID_BE }} \
