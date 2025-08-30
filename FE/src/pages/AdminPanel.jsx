@@ -21,7 +21,7 @@ import {
   UserCheck,
   AlertTriangle
 } from "lucide-react";
-import { dashboardAPI, categoryAPI, queryClient, userAPI, productAPI } from "@/lib/api";
+import { dashboardAPI, categoryAPI, queryClient, userAPI, productAPI, negotiationAPI } from "@/lib/api";
 import { authManager } from "@/lib/auth";
 
 export default function AdminPanel() {
@@ -48,6 +48,12 @@ export default function AdminPanel() {
     queryFn: () => productAPI.getProducts().then((res) => res.data)
   });
   console.log(products);
+
+    const { data: negotiations, isLoading: negotiationsLoading, isError: negotiationsError } = useQuery({
+      queryKey: ["buyer-negotiations"],
+      queryFn: () => negotiationAPI.getNegotiations().then(res => res.data),
+      enabled: !!user,
+    });
 
   const openAddCategoryModal = () => {
     setSelectedCategory(null);
@@ -229,7 +235,7 @@ export default function AdminPanel() {
             <TabsTrigger value="users">Users</TabsTrigger>
             <TabsTrigger value="products">Products</TabsTrigger>
             <TabsTrigger value="categories">Categories</TabsTrigger>
-            <TabsTrigger value="settings">Settings</TabsTrigger>
+            <TabsTrigger value="negotiations">Negotiations</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
@@ -370,76 +376,108 @@ export default function AdminPanel() {
 
           </TabsContent>
 
-           <TabsContent value="products">
-      <Card>
-        <CardHeader>
-          <CardTitle>Product Management</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {isProductsLoading ? (
-            <p className="text-gray-500 text-center py-4">Loading products...</p>
-          ) : productsError ? (
-            <p className="text-red-500 text-center py-4">Error fetching products</p>
-          ) : products?.length === 0 ? (
-            <p className="text-gray-500 text-center py-4">No products found</p>
-          ) : (
-            <>
-              <div className="divide-y divide-gray-200">
-                {products.map((product) => (
-                  <div
-                    key={product.id}
-                    className="flex items-center justify-between p-4 hover:bg-gray-50 cursor-pointer"
-                    onClick={() => setSelectedProduct(product)}
-                  >
-                    <div>
-                      <p className="font-medium text-gray-900">{product.name}</p>
-                      <p className="text-sm text-gray-500">{product.categoryName || "No category"}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm text-gray-700">{product.status || "Pending"}</p>
-                      <p className="text-xs text-gray-400">
-                        {new Date(product.createdAt).toLocaleDateString()}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
+          <TabsContent value="products">
+  <Card>
+    <CardHeader>
+      <CardTitle>Product Management</CardTitle>
+    </CardHeader>
+    <CardContent>
+      {isProductsLoading && <p>Loading products...</p>}
+      {productsError && (
+        <p className="text-red-500">Error: {productsError.message}</p>
+      )}
 
-              {selectedProduct && (
-                <div className="mt-6 p-4 border rounded-md bg-white shadow">
-                  <h3 className="text-xl font-semibold mb-2">{selectedProduct.name}</h3>
-                  <p><strong>Category:</strong> {selectedProduct.categoryName || "No category"}</p>
-                  <p><strong>Description:</strong> {selectedProduct.description || "No description"}</p>
-                  <p><strong>Price:</strong> ${selectedProduct.price}</p>
-                  <p><strong>Original Price:</strong> ${selectedProduct.originalPrice}</p>
-                  <p><strong>Stock Quantity:</strong> {selectedProduct.stockQuantity}</p>
-                  <p><strong>Min Order Quantity:</strong> {selectedProduct.minOrderQuantity}</p>
-                  <p><strong>Rating:</strong> {selectedProduct.rating} ({selectedProduct.reviewCount} reviews)</p>
-                  <p><strong>Views:</strong> {selectedProduct.views}</p>
-                  <p><strong>Short Description:</strong> {selectedProduct.shortDescription}</p>
-                  {/* Render images if any */}
-                  {selectedProduct.images?.length > 0 ? (
-                    <div className="mt-4 flex space-x-2 overflow-x-auto">
-                      {selectedProduct.images.map((imgUrl, idx) => (
-                        <img
-                          key={idx}
-                          src={imgUrl}
-                          alt={`Image ${idx + 1}`}
-                          className="h-24 w-auto rounded-md"
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="mt-4 text-gray-500">No images available.</p>
-                  )}
-                  {/* You can add more fields like specifications if needed */}
+      {!isProductsLoading && !productsError && products?.length === 0 && (
+        <p className="text-gray-500">No products found</p>
+      )}
+
+      {!isProductsLoading && !productsError && products?.length > 0 && (
+        <ul className="divide-y divide-gray-200">
+          {products.map(product => (
+            <li key={product.id} className="py-2">
+              <div
+                className="flex items-center space-x-3 cursor-pointer hover:bg-gray-50 p-2 rounded"
+                onClick={() => setSelectedProduct(product)}
+              >
+                {/* <img
+                  src={product.images?.[0] || "/placeholder.png"}
+                  alt={product.name}
+                  className="w-10 h-10 object-cover rounded"
+                /> */}
+                <div>
+                  <p className="font-medium">{product.name}</p>
+                  <p className="text-sm text-gray-500">
+                    {product.categoryName} - ${product.price}
+                  </p>
                 </div>
-              )}
-            </>
-          )}
-        </CardContent>
-      </Card>
-    </TabsContent>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </CardContent>
+  </Card>
+
+  {/* Product Details Modal */}
+  {selectedProduct && (
+    <div className="fixed inset-0 bg-transparent bg-opacity-10 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 w-[32rem] shadow-lg max-h-[90vh] overflow-y-auto">
+        <h2 className="text-xl font-semibold mb-4">Product Details</h2>
+        
+        <p><strong>Name:</strong> {selectedProduct.name}</p>
+        <p><strong>Category:</strong> {selectedProduct.categoryName}</p>
+        <p><strong>Description:</strong> {selectedProduct.description || "N/A"}</p>
+        <p><strong>Short Description:</strong> {selectedProduct.shortDescription || "N/A"}</p>
+        <p><strong>Price:</strong> ${selectedProduct.price}</p>
+        <p><strong>Original Price:</strong> ${selectedProduct.originalPrice}</p>
+        <p><strong>Stock Quantity:</strong> {selectedProduct.stockQuantity}</p>
+        <p><strong>Min Order Quantity:</strong> {selectedProduct.minOrderQuantity}</p>
+        <p><strong>Rating:</strong> {selectedProduct.rating} ({selectedProduct.reviewCount} reviews)</p>
+        <p><strong>Views:</strong> {selectedProduct.views}</p>
+        <p><strong>Vendor ID:</strong> {selectedProduct.vendorId}</p>
+        <p><strong>Active:</strong> {selectedProduct.isActive ? "Yes" : "No"}</p>
+        <p><strong>Created At:</strong> {new Date(selectedProduct.createdAt).toLocaleString()}</p>
+        <p><strong>Updated At:</strong> {new Date(selectedProduct.updatedAt).toLocaleString()}</p>
+
+        {/* Images */}
+        {/* {selectedProduct.images?.length > 0 ? (
+          <div className="mt-4 flex space-x-2 overflow-x-auto">
+            {selectedProduct.images.map((imgUrl, idx) => (
+              <img
+                key={idx}
+                src={imgUrl}
+                alt={`Product image ${idx + 1}`}
+                className="h-24 w-24 object-cover rounded border"
+              />
+            ))}
+          </div>
+        ) : (
+          <p className="mt-4 text-gray-500">No images available.</p>
+        )} */}
+
+        {/* Specifications */}
+        {selectedProduct.specifications && Object.keys(selectedProduct.specifications).length > 0 && (
+          <div className="mt-4">
+            <h4 className="font-semibold mb-2">Specifications</h4>
+            <ul className="list-disc list-inside text-sm text-gray-700">
+              {Object.entries(selectedProduct.specifications).map(([key, value]) => (
+                <li key={key}><strong>{key}:</strong> {value}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <button
+          className="mt-6 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+          onClick={() => setSelectedProduct(null)}
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  )}
+</TabsContent>
+
 
           <TabsContent value="categories" className="space-y-6">
       <div className="flex justify-between items-center">
@@ -552,18 +590,68 @@ export default function AdminPanel() {
       </Card>
     </TabsContent>
 
-          <TabsContent value="settings">
+          <TabsContent value="negotiations" className="space-y-6">
+            <div className="flex justify-between items-center">
+              <h2 className="text-xl font-semibold text-gray-900">Price Negotiations</h2>
+            </div>
+
             <Card>
-              <CardHeader>
-                <CardTitle>Platform Settings</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-8">
-                  <Settings className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">Platform Configuration</h3>
-                  <p className="text-gray-600">Platform settings and configuration options will be available here.</p>
-                </div>
-              </CardContent>
+             <CardContent>
+  {negotiationsLoading ? (
+    <div className="space-y-4">
+      {Array.from({ length: 3 }).map((_, i) => (
+        <Skeleton key={i} className="h-16 w-full" />
+      ))}
+    </div>
+  ) : negotiations?.length === 0 ? (
+    <div className="text-center py-8">
+      <MessageSquare className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+      <p className="text-gray-600">
+        No active negotiations. Start negotiating on product pages.
+      </p>
+    </div>
+  ) : (
+    <div className="space-y-4">
+      {negotiations?.map((negotiation) => (
+        <div
+          key={negotiation.id}
+          className="flex items-center justify-between p-4 border rounded-lg"
+        >
+          <div>
+            <p className="font-medium text-gray-900">Product Negotiation</p>
+            <p className="text-sm text-gray-600">
+              Current offer: $
+              {parseFloat(negotiation.currentPrice).toLocaleString()}
+            </p>
+            <p className="text-xs text-gray-500">
+              Updated: {new Date(negotiation.updatedAt).toLocaleDateString()}
+            </p>
+          </div>
+
+          <div>
+            {(() => {
+              const product = products?.find(
+                (p) => p.id === negotiation.productId
+              );
+              if (!product) return null;
+
+              return (
+                <Button
+                      onClick={() =>
+                        (window.location.href = `/admin/negotiations/chat/${negotiation.id}`)
+                      }
+                    >
+                      View Chat
+                    </Button>
+              );
+            })()}
+          </div>
+        </div>
+      ))}
+    </div>
+  )}
+</CardContent>
+
             </Card>
           </TabsContent>
         </Tabs>

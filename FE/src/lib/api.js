@@ -28,7 +28,7 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       sessionStorage.removeItem('authToken');
-      window.location.href = '/login';
+      // window.location.href = '/login';
     }
     return Promise.reject(error);
   }
@@ -79,6 +79,7 @@ export const rfqAPI = {
 
 // Order API
 export const orderAPI = {
+  createOrder: (orderData) => api.post("/orders", orderData),
   getOrders: () => api.get('/orders'),
   updateOrderStatus: (id, status) => api.put(`/orders/${id}/status`, { status }),
 };
@@ -105,6 +106,7 @@ export const dashboardAPI = {
   getVendorStats: () => api.get('/dashboard/vendor-stats'),
   getBuyerStats: () => api.get('/dashboard/buyer-stats'),
   getAdminStats: () => api.get('/dashboard/admin-stats'),
+  getStats: () => api.get('/dashboard/stats'),
 };
 
 // Re-export queryClient for compatibility

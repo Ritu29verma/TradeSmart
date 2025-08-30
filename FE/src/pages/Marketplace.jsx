@@ -16,11 +16,7 @@ export default function Marketplace() {
 
 
   // Fetch all products via axios wrapper
-  const {
-    data: products,
-    isLoading: productsLoading,
-    error: productError,
-  } = useQuery({
+  const {data: products,isLoading: productsLoading, error: productError,} = useQuery({
     queryKey: ["products", searchTerm, selectedCategory, sortBy],
     queryFn: () => productAPI.getProducts({
           search: searchTerm || undefined,
@@ -37,11 +33,7 @@ export default function Marketplace() {
   });
 
   // Fetch categories
-  const {
-    data: categories,
-    isLoading: categoriesLoading,
-    error: categoriesError,
-  } = useQuery({
+  const {data: categories,isLoading: categoriesLoading,error: categoriesError,} = useQuery({
     queryKey: ["categories"],
     queryFn: () => categoryAPI.getCategories().then((res) => res.data),
   });

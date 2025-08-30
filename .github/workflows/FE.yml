@@ -1,0 +1,40 @@
+name: Frontend CI/CD
+
+on:
+  push:
+    paths:
+      - 'FE/**'
+    branches:
+      - main
+
+jobs:
+  frontend-ci-cd:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: FE
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20   # 👈 match your local version
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel
+
+      - name: Deploy Frontend (only if tests & build pass)
+        run: vercel deploy --prod --cwd=frontend \
+          --token=${{ secrets.VERCEL_TOKEN }} \
+          --scope=${{ secrets.VERCEL_ORG_ID }} \
+          --project=${{ secrets.VERCEL_PROJECT_ID_FE }} \
+          --yes --confirm

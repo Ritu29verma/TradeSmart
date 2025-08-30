@@ -23,7 +23,8 @@ import RFQForm from "@/components/RFQForm";
 import { formatDistanceToNowStrict } from "date-fns";
 import { useParams } from "wouter";
 import NegotiationChat from "@/components/NegotiationChat";
-import { socket, joinNegotiationRoom } from "@/lib/socket";
+import { socket } from "@/lib/socket";
+import { useLocation } from "wouter";
 
 export default function BuyerDashboard({
   onStartNegotiation // callback: (quote) => void
@@ -34,16 +35,21 @@ export default function BuyerDashboard({
   const [selectedRfqId, setSelectedRfqId] = useState(null);
   const [selectedQuoteId, setSelectedQuoteId] = useState(null);
   const [activeProduct, setActiveProduct] = useState(null);
-  const [activeNegotiationId, setActiveNegotiationId] = useState(null);
+  const [selectedProductId, setSelectedProductId] = useState(null);
+  const [quantity, setQuantity] = useState(1);
+  const [, navigate] = useLocation();
   const { id } = useParams();
   const buyerId = user?.id;
 
-    // Fetch buyer's negotiations
+  // Fetch buyer's negotiations
   const { data: negotiations, isLoading: negotiationsLoading, isError: negotiationsError } = useQuery({
     queryKey: ["buyer-negotiations"],
     queryFn: () => negotiationAPI.getNegotiations().then(res => res.data),
     enabled: !!user && user.role === "buyer",
   });
+
+  console.log(negotiations)
+
 
   // Fetch buyer stats
   const { data: stats, isLoading: statsLoading, isError: statsError } = useQuery({
@@ -58,6 +64,9 @@ export default function BuyerDashboard({
     queryKey: ["buyer-rfqs"],
     queryFn: () => rfqAPI.getRfqs().then(res => res.data),
     enabled: !!user && user.role === "buyer",
+    //  initialData: [], // avoids undefined flick
+    placeholderData: [],
+    keepPreviousData: true,
   });
 
   // Fetch buyer's orders
@@ -68,12 +77,19 @@ export default function BuyerDashboard({
   });
   // console.log(orders)
 
+  const activeNegotiations = negotiations?.filter(negotiation => {
+    return negotiation.isActive;
+  });
+
   // Fetch quotes for this RFQ
   const quotesKey = ["rfq", selectedRfqId, "quotes"];
   const { data: quotes = [], isLoading: quotesLoading, error: quotesError } = useQuery({
     queryKey: quotesKey,
     queryFn: () => rfqAPI.getQuotes(selectedRfqId).then(res => res.data),
     enabled: !!selectedRfqId,
+    placeholderData: [],
+    // initialData: [], 
+    keepPreviousData: true,
     onError: (err) => {
       toast({
         variant: "destructive",
@@ -99,10 +115,13 @@ export default function BuyerDashboard({
     enabled: !!id,
   });
 
+  // console.log(product)
+
   // Accept quote mutation
   const acceptMutation = useMutation({
     mutationFn: (quoteId) => rfqAPI.acceptQuote(quoteId).then(res => res.data),
     onSuccess: ({ quote, order }) => {
+      queryClient.invalidateQueries(["buyer-orders"]);
       toast({
         title: "Quote accepted",
         description: "Order created from accepted quote."
@@ -117,22 +136,18 @@ export default function BuyerDashboard({
     }, onSettled: () => {
       queryClient.invalidateQueries({ queryKey: quotesKey });
       queryClient.invalidateQueries({ queryKey: ["buyer-rfqs"] });
+      queryClient.invalidateQueries({ queryKey: ["buyer-orders"] });
     }
   });
 
-    useEffect(() => {
+  useEffect(() => {
     if (product) {
       setActiveProduct(product);
     }
   }, [product]);
 
- useEffect(() => {
-    // 1️⃣ Connect socket when component mounts
-    if (!socket.connected) {
-      socket.connect();
-    }
-
-    // 2️⃣ When socket connects, join room
+  useEffect(() => {
+    if (!socket.connected) socket.connect();
     socket.on("connect", () => {
       console.log("🟢 Socket connected:", socket.id);
 
@@ -150,20 +165,30 @@ export default function BuyerDashboard({
       }
     });
 
+    //   socket.on("deal:accepted", ({ negotiationId }) => {
+    //   console.log("📉 Negotiation closed:", negotiationId);
+
+    //   // Remove from active negotiations immediately
+    //   queryClient.setQueryData(["buyer-negotiations"], (old = []) =>
+    //     old.filter(n => n.id !== negotiationId)
+    //   );
+
+    //   toast({
+    //     title: "Negotiation Closed",
+    //     description: "Your deal was accepted and moved out of active negotiations.",
+    //   });
+    // });
+
     socket.on("deal:accepted", ({ negotiationId }) => {
-    console.log("📉 Negotiation closed:", negotiationId);
-
-    // Remove from active negotiations immediately
-    queryClient.setQueryData(["buyer-negotiations"], (old = []) =>
-      old.filter(n => n.id !== negotiationId)
-    );
-
-    toast({
-      title: "Negotiation Closed",
-      description: "Your deal was accepted and moved out of active negotiations.",
+      queryClient.setQueryData(["/negotiations"], (oldData) => {
+        if (!oldData) return oldData;
+        return oldData.map((negotiation) =>
+          negotiation.id === negotiationId
+            ? { ...negotiation, isActive: false } // 🔥 mark as inactive
+            : negotiation
+        );
+      });
     });
-  });
-
     return () => {
       console.log("🔴 Disconnecting socket");
       socket.off("connect");
@@ -209,16 +234,16 @@ export default function BuyerDashboard({
     );
   }
 
-if (id) {
-  if (productLoading) return <p>Loading product...</p>;
-  if (!product) return <p>Product not found</p>;
+  // if (id) {
+  //   if (productLoading) return <p>Loading product...</p>;
+  //   if (!product) return <p>Product not found</p>;
 
-  return (
-    <div>
-      <NegotiationChat product={product} />
-    </div>
-  );
-}
+  //   return (
+  //     <div>
+  //       <NegotiationChat product={product} />
+  //     </div>
+  //   );
+  // }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -320,24 +345,24 @@ if (id) {
         </div>
 
         {/* Main Content */}
-      <Tabs defaultValue="orders" className="space-y-10">
-  <TabsList className="flex flex-wrap gap-0 w-full bg-gray-100 p-2 rounded">
-    {[
-      ["orders", "Orders"],
-      ["rfqs", "RFQs"],
-      ["incoming-quotes", "Incoming Quotes"],
-      ["negotiations", "Negotiations"],
-      ["analytics", "Analytics"]
-    ].map(([value, label]) => (
-      <TabsTrigger
-        key={value}
-        value={value}
-        className="flex-1 min-w-[100px] text-center text-sm break-words mb-2"
-      >
-        {label}
-      </TabsTrigger>
-    ))}
-  </TabsList>
+        <Tabs defaultValue="orders" className="space-y-10">
+          <TabsList className="flex flex-wrap gap-0 w-full bg-gray-100 p-2 rounded">
+            {[
+              ["orders", "Orders"],
+              ["rfqs", "RFQs"],
+              ["incoming-quotes", "Incoming Quotes"],
+              ["negotiations", "Negotiations"],
+              ["analytics", "Analytics"]
+            ].map(([value, label]) => (
+              <TabsTrigger
+                key={value}
+                value={value}
+                className="flex-1 min-w-[100px] text-center text-sm break-words mb-2"
+              >
+                {label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
 
           <TabsContent value="orders" className="space-y-6">
             <div className="flex justify-between items-center">
@@ -444,6 +469,7 @@ if (id) {
 
           <TabsContent value="incoming-quotes" className="space-y-6">
             <div className="flex flex-col md:flex-row gap-6 mb-4">
+              {/* Left Panel - RFQs */}
               <div className="flex-1">
                 <Card>
                   <CardHeader>
@@ -460,15 +486,19 @@ if (id) {
                           <div
                             key={rfq.id}
                             className={`p-3 rounded-lg border cursor-pointer flex justify-between items-center ${selectedRfqId === rfq.id
-                              ? "border-blue-500 bg-blue-50/10"
-                              : "border-transparent hover:bg-slate-100/5"
+                                ? "border-blue-500 bg-blue-50/10"
+                                : "border-transparent hover:bg-slate-100/5"
                               }`}
-                            onClick={() => setSelectedRfqId(rfq.id)}
+                            onClick={() => {
+                              setSelectedRfqId(rfq.id);
+                              setSelectedProductId(rfq.productId);
+                            }}
                           >
                             <div>
                               <p className="font-medium text-black">{rfq.title}</p>
                               <p className="text-sm text-slate-400">
-                                Qty: {rfq.quantity} • Target: ${parseFloat(rfq.targetPrice || 0).toLocaleString()}
+                                Qty: {rfq.quantity} • Target: $
+                                {parseFloat(rfq.targetPrice || 0).toLocaleString()}
                               </p>
                             </div>
                             <Badge variant="outline">{rfq.status}</Badge>
@@ -480,13 +510,17 @@ if (id) {
                 </Card>
               </div>
 
+              {/* Right Panel - Quotes */}
               <div className="flex-1">
                 <Card>
                   <CardHeader>
                     <CardTitle>Incoming Quotes</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    {quotesLoading && <p>Loading quotes...</p>}
+                    {quotesLoading && quotes.length === 0 && (
+                      <p>Loading quotes...</p>
+                    )}
+
                     {!quotesLoading && !selectedRfqId && (
                       <p className="text-gray-600">Select an RFQ to view its quotes.</p>
                     )}
@@ -497,14 +531,16 @@ if (id) {
                       </div>
                     )}
 
-                    {quotes?.map((quote) => (
+                    {quotes.map((quote) => (
                       <div
                         key={quote.id}
                         className="bg-slate-800 rounded-lg p-4 flex flex-col md:flex-row justify-between items-start gap-4"
                       >
                         <div className="flex-1">
                           <div className="flex items-center space-x-2 mb-1">
-                            <h3 className="text-lg font-semibold text-white">Quote from Vendor</h3>
+                            <h3 className="text-lg font-semibold text-white">
+                              Quote from Vendor
+                            </h3>
                             {quote.isAccepted && (
                               <Badge className="bg-green-600">Accepted</Badge>
                             )}
@@ -513,7 +549,7 @@ if (id) {
                             Price: <span className="font-medium">${quote.price}</span> ×{" "}
                             <span className="font-medium">{quote.quantity}</span> ={" "}
                             <span className="font-medium">
-                              ${(parseFloat(quote.price) * parseInt(quote.quantity)).toFixed(2)}
+                              {(parseFloat(quote.price) * parseInt(quote.quantity)).toFixed(2)}
                             </span>
                           </p>
                           <p className="text-sm text-slate-300 mb-1">
@@ -521,9 +557,10 @@ if (id) {
                           </p>
                           {quote.validUntil ? (
                             <p className="text-sm text-slate-300 mb-1">
-                              Valid until: {new Date(quote.validUntil).toLocaleString()} (
+                              Valid until:{" "}
+                              {new Date(quote.validUntil).toLocaleString()} (
                               {formatDistanceToNowStrict(new Date(quote.validUntil), {
-                                addSuffix: true
+                                addSuffix: true,
                               })}
                               )
                             </p>
@@ -553,11 +590,13 @@ if (id) {
                                   ? "Accepting..."
                                   : "Accept Quote"}
                               </Button>
+
+                              {/* ✅ New View Product button */}
                               <Button
-                                variant="outline"
-                                onClick={() => onStartNegotiation?.(quote)}
+                                variant="secondary"
+                                onClick={() => navigate(`/product/${quote.productId}`)}
                               >
-                                Start Negotiation
+                                View Product
                               </Button>
                             </>
                           ) : (
@@ -566,20 +605,22 @@ if (id) {
                             </div>
                           )}
                         </div>
+
                       </div>
                     ))}
 
                     <Separator />
 
                     <div className="text-xs text-slate-400">
-                      You can accept one quote to turn it into an order, or start a negotiation if you
-                      want to counter the terms.
+                      You can accept one quote to turn it into an order, or start a
+                      negotiation if you want to counter the terms.
                     </div>
                   </CardContent>
                 </Card>
               </div>
             </div>
           </TabsContent>
+
 
           <TabsContent value="negotiations" className="space-y-6">
             <div className="flex justify-between items-center">
@@ -597,45 +638,55 @@ if (id) {
                       <Skeleton key={i} className="h-16 w-full" />
                     ))}
                   </div>
-                ) : negotiations?.length === 0 ? (
+                ) : activeNegotiations?.length === 0 ? (
                   <div className="text-center py-8">
                     <MessageSquare className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                    <p className="text-gray-600">No active negotiations. Start negotiating on product pages.</p>
+                    <p className="text-gray-600">
+                      No active negotiations. Start negotiating on product pages.
+                    </p>
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {negotiations?.map((negotiation) => (
-                      <div key={negotiation.id} className="flex items-center justify-between p-4 border rounded-lg">
+                    {activeNegotiations?.map((negotiation) => (
+                      <div
+                        key={negotiation.id}
+                        className="flex items-center justify-between p-4 border rounded-lg"
+                      >
                         <div>
                           <p className="font-medium text-gray-900">Product Negotiation</p>
                           <p className="text-sm text-gray-600">
-                            Current offer: ${parseFloat(negotiation.currentPrice).toLocaleString()}
+                            Current offer: $
+                            {parseFloat(negotiation.currentPrice).toLocaleString()}
                           </p>
                           <p className="text-xs text-gray-500">
                             Updated: {new Date(negotiation.updatedAt).toLocaleDateString()}
                           </p>
                         </div>
-                        {/* <Badge variant={negotiation.isActive ? "default" : "secondary"}>
-                          {negotiation.isActive ? "Active" : "Closed"}
-                        </Badge> */}
+
                         <div>
                           {(() => {
-                            const product = products?.find(p => p.id === negotiation.productId);
+                            const product = products?.find(
+                              (p) => p.id === negotiation.productId
+                            );
                             if (!product) return null;
 
                             return (
-                              <Button onClick={() => window.location.href = `/buyer-dashboard/${product.id}`}>
+                              <Button
+                                onClick={() =>
+                                  (window.location.href = `/buyer-dashboard/${product.id}`)
+                                }
+                              >
                                 Start
                               </Button>
                             );
                           })()}
                         </div>
-
                       </div>
                     ))}
                   </div>
                 )}
               </CardContent>
+
             </Card>
           </TabsContent>
 

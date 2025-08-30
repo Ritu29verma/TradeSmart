@@ -13,17 +13,57 @@ import {
   Edit, 
   Trash2,
   Eye,
-  TrendingUp
+  TrendingUp,
+  CheckCircle
 } from "lucide-react";
-import { productAPI, queryClient } from "@/lib/api";
+import { productAPI, queryClient, orderAPI } from "@/lib/api";
 import { authManager } from "@/lib/auth";
 import ProductFormDialog from "./ProductFormDialog";
+import { useLocation } from "wouter";
 
 export default function ProductCard({ product}) {
   const { toast } = useToast();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const user = authManager.getUser();
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+   const [, navigate] = useLocation();
+
+const createOrderMutation = useMutation({
+  mutationFn: (orderData) => orderAPI.createOrder(orderData).then((res) => res.data),
+  onSuccess: (data) => {
+    console.log("✅ Order created:", data);
+    queryClient.invalidateQueries(["orders"]);
+
+    // ✅ Show toast
+    toast({
+      title: "Order Created 🎉",
+      description: "Your order has been placed successfully.",
+    });
+
+    // ✅ Redirect
+    navigate("/buyer-dashboard");
+  },
+  onError: (err) => {
+    console.error("❌ Error creating order:", err);
+
+    toast({
+      title: "Order Failed ❌",
+      description: err.response?.data?.message || "Something went wrong. Please try again.",
+      variant: "destructive",
+    });
+  },
+});
+
+const handleAcceptDeal = () => {
+  createOrderMutation.mutate({
+    buyerId: user?.id,
+    vendorId: product.vendorId,
+    productId: product.id,
+    quantity: 1,
+    unitPrice: product.price,
+    totalAmount: product.price * 1,
+  });
+};
 
   // Delete product mutation
   const deleteProductMutation = useMutation({
@@ -85,6 +125,29 @@ export default function ProductCard({ product}) {
     if (!original) return 0;
     return Math.round(((original - current) / original) * 100);
   };
+
+  //   const currentNegotiation = negotiations?.find(
+  //   n => n.productId === product.id && n.isActive
+  // );
+
+  //   const acceptNegotiationMutation = useMutation({
+  //     mutationFn: negotiationAPI.acceptNegotiation,
+  //     onSuccess: () => {
+  //       queryClient.invalidateQueries({ queryKey: ["/api/negotiations"] });
+  //       toast({
+  //         title: "Deal accepted!",
+  //         description: "Your negotiation has been accepted and an order has been created.",
+  //       });
+  //     },
+  //     onError: (error) => {
+  //       toast({
+  //         variant: "destructive",
+  //         title: "Error accepting deal",
+  //         description: error.response?.data?.message || "An error occurred",
+  //       });
+  //     },
+  //   });
+
 
 //   console.log("user", user);
 // console.log("product.vendorId", product.vendorId);
@@ -222,7 +285,7 @@ export default function ProductCard({ product}) {
         
         {/* Action Buttons */}
         <div className="flex space-x-2">
-          {user?.id === product.vendorId ? (
+          {user?.id === product.vendorId || user?.role == "admin" ? (
             <>
             {/* Edit Product Dialog */}
             <ProductFormDialog
@@ -237,17 +300,23 @@ export default function ProductCard({ product}) {
               Edit
             </Button>
             <Button size="sm" className="flex-1">
-              View Details
+              <Link href={`/product/${product.id}`}>
+               View Details
+              </Link>
+             
             </Button>
           </>
           ) : (
             <>
-              <Button size="sm" className="flex-1">
-                Get Quote
-              </Button>
-              <Button variant="outline" size="sm">
-                <MessageSquare className="w-4 h-4" />
-              </Button>
+               <Button
+                    size="sm"
+                    onClick={handleAcceptDeal}
+                    // disabled={acceptNegotiationMutation.isPending}
+                    className="w-full text-xs"
+                  >
+                    <CheckCircle className="w-3 h-3 mr-1" />
+                    Accept Deal
+                  </Button>
             </>
           )}
         </div>

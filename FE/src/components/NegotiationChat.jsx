@@ -76,7 +76,7 @@ export default function NegotiationChat({ product }) {
       if (user?.role === "buyer") {
         navigate("/buyer-dashboard");
       }
-    }, 1000);
+    }, 2000);
   });
 
     return () => {
@@ -150,67 +150,6 @@ export default function NegotiationChat({ product }) {
     }
   }, [messages]);
 
-// const handleAcceptDealClick = async () => {
-//   const isVendor = user?.role === "vendor";
-//   const isBuyer = user?.role === "buyer";
-//    if (!currentNegotiation) {
-//     toast({
-//       variant: "destructive",
-//       title: "No negotiation found",
-//     });
-//     return;
-//   }
-
-//   // Create acceptance message
-//   const acceptanceMessage = {
-//     negotiationId: currentNegotiation.id, 
-//     sender: user?.role,
-//     message: isVendor 
-//       ? "Vendor has accepted your offer ✅"
-//       : "Buyer has accepted your offer ✅",
-//     timestamp: new Date().toISOString(),
-//   };
-
-//   // Send to backend (via socket or API)
-//   socket.emit("accept-deal", acceptanceMessage);
-  
-//   // Update own chat immediately (optimistic update)
-//   setMessages((prev) => [...prev, acceptanceMessage]);
-
-//   try {
-//     if (currentNegotiation) {
-//       // Accept existing negotiation
-//       await handleAcceptDeal();
-//     } else {
-//       // Directly create an order
-//       const order = await orderAPI.createOrder({
-//         productId: product.id,
-//         quantity,
-//         unitPrice: product.price,
-//       });
-
-//       toast({
-//         title: "Order placed!",
-//         description: `Your order for ${product.name} has been created.`,
-//       });
-//     }
-
-//     // Redirect both roles after short delay
-//     setTimeout(() => {
-//       if (isVendor) {
-//         navigate("/vendor-dashboard");
-//       }
-//       if (isBuyer) {
-//         navigate("/buyer-dashboard");
-//       }
-//     }, 2000);
-//   } catch (error) {
-//     toast({
-//       variant: "destructive",
-//       title: "Error creating order",
-//       description: error.response?.data?.message || "Failed to place order",
-//     });
-//   }};
 
 const handleAcceptDealClick = async () => {
   const isVendor = user?.role === "vendor";
@@ -243,9 +182,15 @@ const handleAcceptDealClick = async () => {
 
 // ✅ Listen for acceptance on FE (both buyer & vendor)
 useEffect(() => {
-  socket.on("deal:accepted", ({ negotiationId, sender, message }) => {
-    setMessages((prev) => [...prev, { sender, message, timestamp: new Date().toISOString() }]);
+  socket.on("deal:accepted", ({ negotiationId, sender, message , timestamp }) => {
+    setMessages((prev) => [...prev, { sender, message, timestamp}]);
 
+  //   setNegotiations((prev) =>
+  //   prev.map((n) =>
+  //     n.id === negotiationId ? { ...n, is_active: false } : n
+  //   )
+  // );
+     console.log("➡️ Current user role:", user?.role);
     // Redirect both roles
     if (user?.role === "vendor") {
       navigate("/vendor-dashboard");
@@ -258,7 +203,7 @@ useEffect(() => {
   return () => {
     socket.off("deal:accepted");
   };
-}, [user, navigate]);
+}, [socket ,user, navigate]);
 
   const handleSendMessage = (e) => {
     e.preventDefault();

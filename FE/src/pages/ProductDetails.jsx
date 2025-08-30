@@ -140,6 +140,8 @@ const negotiation = product
   const startNegotiationMutation = useMutation({
     mutationFn: negotiationAPI.createNegotiation,
     onSuccess: () => {
+    queryClient.invalidateQueries(["/negotiations"]);
+    queryClient.invalidateQueries(["/dashboard/vendor-stats"]);
       setIsNegotiationOpen(true);
       toast({
         title: "Negotiation started",
@@ -156,21 +158,23 @@ const negotiation = product
   });
 
   const handleStartNegotiation = () => {
-    if (!user) {
-      toast({
-        variant: "destructive",
-        title: "Login required",
-        description: "Please login to start price negotiation.",
-      });
-      return;
-    }
+  const negotiation = negotiations?.find(n => n.productId === product.id && n.isActive);
 
-    startNegotiationMutation.mutate({
-      productId: product.id,
-      quantity,
-      initialOffer: parseFloat(product.price) * 0.9, // Start with 10% discount
-    });
-  };
+  if (negotiation) {
+    // continue with existing negotiation
+    navigate(`/buyer-dashboard/${product.id}`);
+  } else {
+    // 🔥 start new negotiation since no active one
+    startNegotiationMutation.mutate(
+      { productId: product.id, quantity: 1 }, // pass product + qty
+      {
+        onSuccess: (newNegotiation) => {
+          navigate(`/buyer-dashboard/${product.id}`);
+        }
+      }
+    );
+  }
+};
 
   const handleGetQuote = () => {
     if (!user) {
@@ -304,7 +308,7 @@ const negotiation = product
           {/* Product Info */}
           <div className="space-y-6">
             <div>
-              <Badge className="mb-2">{product.category?.name || "Uncategorized"}</Badge>
+              <Badge className="mb-2">{product.categoryName || "Uncategorized"}</Badge>
               <h1 className="text-3xl font-bold text-gray-900 mb-2">{product.name}</h1>
               <p className="text-gray-600">{product.shortDescription}</p>
             </div>
