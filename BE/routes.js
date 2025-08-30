@@ -41,7 +41,15 @@ export async function registerRoutes(app) {
     }
   });
 
-  // Get all users with role vendor or buyer
+  app.get("/api/dashboard/stats", async (req, res) => {
+  try {
+    const stats = await storage.getAdminStats();
+    res.json(stats);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
   app.get("/api/users", authenticateToken, async (req, res) => {
     try {
       const users = await storage.getUsersByRoles(["vendor", "buyer"]);
@@ -146,7 +154,6 @@ export async function registerRoutes(app) {
     }
   });
 
-  // Update Category
   app.put("/api/categories/:id", authenticateToken, requireRole(['admin']), async (req, res) => {
     try {
       const { name, description, parentId } = req.body;
@@ -163,7 +170,6 @@ export async function registerRoutes(app) {
     }
   });
 
-  // Delete Category
   app.delete("/api/categories/:id", authenticateToken, requireRole(['admin']), async (req, res) => {
     try {
       const { id } = req.params;
@@ -395,8 +401,8 @@ export async function registerRoutes(app) {
       }
 
       // 3. Basic validation (you can replace with schema validation)
-      const { price, quantity, deliveryTime, validUntil, notes } = req.body;
-      if (!price || !quantity) {
+      const { price, quantity, deliveryTime, validUntil, notes, productId } = req.body;
+      if (!productId || !price || !quantity) {
         return res
           .status(400)
           .json({ message: "Price and quantity are required" });
@@ -416,15 +422,11 @@ export async function registerRoutes(app) {
       const existingQuotes = await storage.getQuotesByVendor(req.user.id);
       const existingForThisRfq = existingQuotes.find((q) => q.rfqId === rfqId);
 
-      if (existingForThisRfq) {
-        // Optional: treat as update instead of reject
-        const updatedQuotePayload = {
-          price,
-          quantity,
-          deliveryTime,
-          notes,
-          ...(parsedValidUntil && { validUntil: parsedValidUntil }),
-        };
+       if (existingForThisRfq) {
+      const updatedQuotePayload = {
+        productId, price, quantity, deliveryTime, notes,
+        ...(parsedValidUntil && { validUntil: parsedValidUntil }),
+      };
         const updated = await storage.updateQuote(existingForThisRfq.id, updatedQuotePayload); // you’d need such a method
         return res.status(200).json(updated);
       }
@@ -433,6 +435,7 @@ export async function registerRoutes(app) {
       const quoteData = {
         rfqId,
         vendorId: req.user.id,
+        productId, 
         price,
         quantity,
         deliveryTime,
@@ -454,6 +457,7 @@ export async function registerRoutes(app) {
   app.post("/api/quotes/:id/accept", authenticateToken, requireRole(['buyer']), async (req, res) => {
     try {
       const quoteId = req.params.id;
+      const io = req.app.get("io");
       const quote = await storage.getQuote(quoteId);
       if (!quote) return res.status(404).json({ message: "Quote not found" });
       if (quote.isAccepted) return res.status(400).json({ message: "Quote already accepted" });
@@ -464,18 +468,16 @@ export async function registerRoutes(app) {
         return res.status(403).json({ message: "Not authorized to accept this quote" });
       }
 
-      const acceptedQuote = await storage.acceptQuote(quoteId);
+   const { quote: acceptedQuote, rejectedQuotes, order } = await storage.acceptQuote(quoteId);
 
-      const order = await storage.createOrder({
-        buyerId: req.user.id,
-        vendorId: quote.vendorId,
-        quoteId: quote.id,
-        quantity: quote.quantity,
-        unitPrice: quote.price,
-        totalAmount: (parseFloat(quote.price) * parseInt(quote.quantity)).toString()
-      });
+       io.to(`vendor_${quote.vendorId}`).emit("quoteAccepted", { quote: acceptedQuote, order });
 
-      res.json({ quote: acceptedQuote, order });
+
+    rejectedQuotes.forEach(rq => {
+      io.to(`vendor_${rq.vendorId}`).emit("quoteRejected", { quote: rq, rfqId: rfq.id });
+    });
+
+      res.json({ quote: acceptedQuote, order,rfqClosed: true });
     } catch (error) {
       console.error("Accept quote error:", error);
       res.status(500).json({ message: error.message });
@@ -484,6 +486,44 @@ export async function registerRoutes(app) {
 
 
   // Order routes
+app.post("/api/orders", authenticateToken, async (req, res) => {
+  try {
+    const {
+      buyerId,
+      vendorId,
+      productId,
+      quoteId,
+      quantity,
+      unitPrice,
+      shippingAddress,
+      notes
+    } = req.body;
+
+    // Generate unique order number (e.g. ORD-20250822-xxxxx)
+    const orderNumber = `ORD-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+
+    const totalAmount = Number(unitPrice) * Number(quantity);
+
+    const newOrder = await storage.createOrder({
+      buyerId,
+      vendorId,
+      productId,
+      quoteId,
+      orderNumber,
+      quantity,
+      unitPrice,
+      totalAmount,
+      shippingAddress,
+      notes,
+    });
+
+    res.status(201).json({ order: newOrder });
+  } catch (error) {
+    console.error("❌ Error creating order:", error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
   app.get("/api/orders", authenticateToken, async (req, res) => {
     try {
       const filters = {};
@@ -586,7 +626,7 @@ export async function registerRoutes(app) {
     if (!negotiation) return res.status(404).json({ message: "Negotiation not found" });
 
     // Only buyer or vendor can access
-    if (negotiation.buyerId !== req.user.id && negotiation.vendorId !== req.user.id) {
+    if (req.user.role !== "admin" && negotiation.buyerId !== req.user.id && negotiation.vendorId !== req.user.id) {
       return res.status(403).json({ message: "Not authorized" });
     }
 

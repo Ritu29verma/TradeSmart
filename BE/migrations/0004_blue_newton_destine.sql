@@ -1,0 +1,1 @@
+ALTER TABLE "quotes" ADD COLUMN "product_id" varchar NOT NULL;

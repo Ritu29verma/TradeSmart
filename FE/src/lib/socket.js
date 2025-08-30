@@ -30,6 +30,16 @@ socket.on("deal:accepted", (data) => {
   }
 });
 
+socket.on("quoteAccepted", (data) => {
+  alert("🎉 Your quote was accepted!");
+  // maybe refetch quotes or update state directly
+});
+
+socket.on("quoteRejected", (data) => {
+  alert("❌ Your quote was rejected.");
+  // update UI or refetch
+});
+
 
 socket.on("connect", () => {
   console.log("✅ Socket connected:", socket.id);

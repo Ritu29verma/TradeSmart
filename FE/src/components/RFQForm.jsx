@@ -13,6 +13,9 @@ import { CalendarIcon, FileText, Send } from "lucide-react";
 import { format } from "date-fns";
 import { rfqAPI, productAPI, queryClient } from "@/lib/api";
 import { authManager } from "@/lib/auth";
+import DatePicker from "react-datepicker";
+import "react-datepicker/dist/react-datepicker.css";
+// import { CalendarIcon } from "lucide-react";
 
 export default function RFQForm({ product = null, onSuccess }) {
   const { toast } = useToast();
@@ -43,7 +46,7 @@ export default function RFQForm({ product = null, onSuccess }) {
   const createRfqMutation = useMutation({
     mutationFn: rfqAPI.createRfq,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/rfqs"] });
+      queryClient.invalidateQueries({ queryKey: ["buyer-rfqs"] });
       toast({
         title: "RFQ created successfully",
         description: "Your request for quote has been submitted to vendors.",
@@ -243,29 +246,20 @@ export default function RFQForm({ product = null, onSuccess }) {
           </div>
 
           {/* Deadline */}
-          <div>
-            <Label>Response Deadline</Label>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start text-left font-normal"
-                >
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {formData.deadline ? format(formData.deadline, "PPP") : "Select deadline"}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0">
-                <Calendar
-                  mode="single"
-                  selected={formData.deadline}
-                  onSelect={(date) => setFormData(prev => ({ ...prev, deadline: date }))}
-                  disabled={(date) => date < new Date()}
-                  initialFocus
-                />
-              </PopoverContent>
-            </Popover>
-          </div>
+       <div>
+  <Label>Response Deadline</Label>
+  <div className="relative">
+    <CalendarIcon className="absolute left-3 top-3 h-4 w-4 text-gray-500" />
+    <DatePicker
+      selected={formData.deadline}
+      onChange={(date) => setFormData((prev) => ({ ...prev, deadline: date }))}
+      minDate={new Date()}
+      dateFormat="dd MMM yyyy"
+      className="w-full pl-10 pr-3 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+      placeholderText="Select deadline"
+    />
+  </div>
+</div>
 
           {/* Additional Requirements */}
           <div className="space-y-3">

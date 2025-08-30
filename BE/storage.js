@@ -6,7 +6,7 @@ await initDb();
 const db = getDb();
 import 'module-alias/register.js';
 import { users, products, categories, rfqs, quotes, orders, negotiations, priceHistory } from "./shared/schema.js";
-import { eq, and, desc, asc, ilike, sql, count, or } from "drizzle-orm";
+import { eq, and, desc, asc, ilike, sql, count, or , ne } from "drizzle-orm";
 import bcrypt from "bcrypt";
 
 // console.log("Users table:", users);
@@ -206,6 +206,16 @@ async getProductsByVendor(vendorId) {
     return rfq;
   }
 
+  async rejectOtherQuotes(rfqId, acceptedQuoteId) {
+  return db.update(quotes)
+    .set({ status: "rejected", isAccepted: false , updatedAt: new Date() })
+    .where(and(
+      eq(quotes.rfqId, rfqId),
+      ne(quotes.id, acceptedQuoteId) // exclude accepted quote
+    ))
+    .returning();
+}
+
   // Quote operations
   async getQuotes(rfqId) {
     return await db.select().from(quotes).where(eq(quotes.rfqId, rfqId)).orderBy(asc(quotes.price));
@@ -233,18 +243,41 @@ async getProductsByVendor(vendorId) {
     return quote;
   }
 
-  async acceptQuote(id) {
-    const existing = await this.getQuote(id);
-    if (!existing) return null;
-    if (existing.isAccepted) return existing; // or throw if you prefer
+async acceptQuote(id) {
+  // 1. Get the quote
+  const existing = await this.getQuote(id);
+  if (!existing) return null;
+  if (existing.isAccepted) return existing;
 
-    const [quote] = await db
-      .update(quotes)
-      .set({ isAccepted: true })
-      .where(eq(quotes.id, id))
-      .returning();
-    return quote;
-  }
+  // 2. Accept this quote
+  const [quote] = await db
+    .update(quotes)
+    .set({ isAccepted: true, updatedAt: new Date() })
+    .where(eq(quotes.id, id))
+    .returning();
+   const rejectedQuotes = await this.rejectOtherQuotes(existing.rfqId, existing.id);
+  // 3. Reject all other quotes for this RFQ
+  await this.rejectOtherQuotes(existing.rfqId, existing.id);
+
+  // 4. Update RFQ status -> "closed" or "fulfilled"
+  await this.updateRfq(existing.rfqId, { status: "accepted" });
+   const totalAmount = (parseFloat(existing.price) * parseInt(existing.quantity)).toString();
+   const rfq = await this.getRfq(existing.rfqId);
+  // 5. Create an Order from the accepted quote
+  const order = await this.createOrder({
+   buyerId: rfq.buyerId, 
+      vendorId: existing.vendorId,
+      productId: existing.productId,
+      rfqId: existing.rfqId,
+      quoteId: existing.id,
+      quantity: existing.quantity,
+      unitPrice: existing.price,
+      totalAmount,
+      status: "pending"
+    });
+
+  return { quote, rejectedQuotes, order };
+}
 
   // Order operations
   async getOrders(filters = {}) {
@@ -311,6 +344,50 @@ async getProductsByVendor(vendorId) {
     return await query.orderBy(desc(negotiations.updatedAt));
   }
 
+  async acceptNegotiation(negotiationId) {
+  // 1. Get negotiation details
+  const [negotiation] = await db
+    .select()
+    .from(negotiations)
+    .where(eq(negotiations.id, negotiationId))
+    .limit(1);
+
+  if (!negotiation) {
+    throw new Error("Negotiation not found");
+  }
+
+  // 2. Update negotiation -> mark accepted
+  await db
+    .update(negotiations)
+    .set({
+      isAccepted: true,
+      isActive: false,
+      updatedAt: new Date(),
+    })
+    .where(eq(negotiations.id, negotiationId));
+
+  // 3. Insert into orders table
+  const [order] = await db
+    .insert(orders)
+    .values({
+      buyerId: negotiation.buyerId,
+      vendorId: negotiation.vendorId,
+      productId: negotiation.productId,
+      quoteId: negotiation.id,
+      orderNumber: `ORD-${Date.now()}`, // you can use a better sequence
+      quantity: negotiation.quantity,
+      unitPrice: negotiation.finalPrice ?? negotiation.currentPrice,
+      totalAmount: (negotiation.quantity *
+        (negotiation.finalPrice ?? negotiation.currentPrice)),
+      status: "pending",
+      shippingAddress: negotiation.shippingAddress ?? {},
+      notes: null,
+    })
+    .returning();
+
+  return order;
+}
+
   async getNegotiation(id) {
     const [negotiation] = await db.select().from(negotiations).where(eq(negotiations.id, id));
     return negotiation || undefined;
@@ -349,6 +426,27 @@ async getProductsByVendor(vendorId) {
 
     return await this.updateNegotiation(id, { messages });
   }
+
+async updateNegotiationStatus(id, updates) {
+  const [negotiation] = await db
+    .update(negotiations)
+    .set({ ...updates, updatedAt: new Date() })
+    .where(eq(negotiations.id, id))
+    .returning();
+
+  return negotiation;
+}
+
+async getNegotiationById(negotiationId) {
+  const [negotiation] = await db
+    .select()
+    .from(negotiations)
+     .where(eq(negotiations.id, negotiationId))   // replace `id` with your actual PK column
+    .limit(1);
+
+  return negotiation || null;
+}
+
 
   // Price history operations
   async addPriceHistory(productId, oldPrice, newPrice, reason, aiGenerated = false) {

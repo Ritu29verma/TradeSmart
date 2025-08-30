@@ -40,31 +40,60 @@ export function initSocket(server) {
     });
   });
 
-   socket.on("accept-deal", async ({ negotiationId, sender, message }) => {
-        console.log(`🤝 Deal accepted in negotiation ${negotiationId}`);
+  socket.on("accept-deal", async ({ negotiationId, sender, message }) => {
+  try {
+    console.log(`🤝 Deal accepted in negotiation ${negotiationId}`);
 
-        // (optional) Save acceptance to DB
-        await storage.addNegotiationMessage(negotiationId, {
-          sender,
-          message,
-          type: "deal-accepted",
-        });
+    // Save acceptance message
+    await storage.addNegotiationMessage(negotiationId, {
+      sender,
+      message,
+      type: "deal-accepted",
+    });
 
-        // Notify everyone in the room
-        io.to(`negotiation_${negotiationId}`).emit("deal:accepted", {
-          negotiationId,
-          sender,
-          message,
-          timestamp: new Date().toISOString(),
-        });
+    // Mark negotiation as accepted and inactive
+    const negotiation = await storage.updateNegotiationStatus(negotiationId, {
+      isActive: false,
+      isAccepted: true
+    });
+
+    // If negotiation is accepted, create order automatically
+    if (negotiation.isAccepted) {
+      const newOrder = await storage.createOrder({
+        buyerId: negotiation.buyerId,
+        vendorId: negotiation.vendorId,
+        productId: negotiation.productId,
+        quantity: negotiation.quantity,
+        unitPrice: negotiation.currentPrice,
+        totalAmount: negotiation.currentPrice * negotiation.quantity,
       });
+
+      // Emit updated event with order info
+      io.to(`negotiation_${negotiationId}`).emit("deal:accepted", {
+        negotiationId,
+        sender,
+        message,
+        order: newOrder,
+        timestamp: new Date().toISOString(),
+      });
+
+      io.to(`negotiation_${negotiationId}`).emit("quoteAccepted", {
+  quote,
+  order: newOrder,
+  rfqId: negotiation.rfqId, // make sure your negotiation has rfqId
+});
+
+    }
+  } catch (err) {
+    console.error("❌ Error accepting deal:", err);
+    socket.emit("error", { error: "Failed to accept deal" });
+  }
+});
 
     socket.on("disconnect", () => {
         console.log("🔴 Client disconnected");
     });
 });
-
-    // Return io so it can be used in routes
     server.app.set("io", io);
   });
 

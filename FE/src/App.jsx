@@ -17,6 +17,7 @@ import Profile from "@/pages/Profile";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import PricingChart from "./components/PricingChart";
+import AdminNegotiationChat from "./pages/AdminNegotiationChat";
 import { AuthManager } from "./lib/auth";
 
 function Router() {
@@ -38,6 +39,7 @@ function Router() {
           <Route path="/ai-tools" component={AITools} />
           <Route path="/profile" component={Profile} />
           <Route path="/pricing-chart" component={PricingChart}/>
+          <Route path="/admin/negotiations/chat/:id" component={AdminNegotiationChat} />
           <Route component={NotFound} />
         </Switch>
       </main>

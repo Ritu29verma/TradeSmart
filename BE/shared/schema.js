@@ -59,6 +59,7 @@ export const rfqs = pgTable("rfqs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   buyerId: varchar("buyer_id").notNull(),
   productId: varchar("product_id"),
+  referenceProductId: varchar("reference_product_id"), 
   title: text("title").notNull(),
   description: text("description").notNull(),
   quantity: integer("quantity").notNull(),
@@ -73,6 +74,7 @@ export const rfqs = pgTable("rfqs", {
 export const quotes = pgTable("quotes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   rfqId: varchar("rfq_id").notNull(),
+  productId: varchar("product_id").notNull(),
   vendorId: varchar("vendor_id").notNull(),
   price: decimal("price", { precision: 10, scale: 2 }).notNull(),
   quantity: integer("quantity").notNull(),
@@ -85,6 +87,7 @@ export const quotes = pgTable("quotes", {
 
 export const orders = pgTable("orders", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  rfqId: varchar("rfq_id").references(() => rfqs.id),
   buyerId: varchar("buyer_id").notNull(),
   vendorId: varchar("vendor_id").notNull(),
   productId: varchar("product_id"),
@@ -102,6 +105,7 @@ export const orders = pgTable("orders", {
 
 export const negotiations = pgTable("negotiations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  rfqId: varchar("rfq_id").notNull().references(() => rfqs.id, { onDelete: "cascade" }),
   productId: varchar("product_id").notNull(),
   buyerId: varchar("buyer_id").notNull(),
   vendorId: varchar("vendor_id").notNull(),

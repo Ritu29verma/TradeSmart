@@ -69,17 +69,15 @@ export default function VendorDashboard() {
     queryFn: () => negotiationAPI.getNegotiations().then(res => res.data),
     enabled: !!user && user.role === "vendor",
   });
-  // console.log(negotiations)
+  console.log(negotiations)
 
-
-  // Fetch vendor's products
-  // const { data: products, isLoading: productsLoading } = useQuery({
-  //   queryKey: ['/api/products', user?.id],
-  //   queryFn: () =>
-  //     productAPI.getProduct({ vendorId: user?.id })
-  //       .then(res => res.data),
-  //   enabled: !!user?.id,
-  // });
+const updateOrderMutation = useMutation({
+  mutationFn: orderAPI.updateOrder,
+  onSuccess: () => {
+    queryClient.invalidateQueries(["vendor-orders"]);
+    queryClient.invalidateQueries(["/dashboard/vendor-stats"]);
+  }
+});
 
   const { data: products, isLoading: productsLoading } = useQuery({
   queryKey: ['/api/vendors', user?.id, 'products'],
@@ -87,7 +85,6 @@ export default function VendorDashboard() {
     productAPI.getProductsByVendor(user?.id).then(res => res.data),
   enabled: !!user?.id,
 });
-
 
   // Fetch single product only if ID exists
   const { data: product, isLoading: productLoading } = useQuery({
@@ -147,6 +144,8 @@ export default function VendorDashboard() {
     enabled: !!user?.id,
   });
 
+  console.log(rfqs)
+
   // Fetch vendor's Orders
   const { data: orders, isLoading: ordersLoading, isError: ordersError } = useQuery({
     queryKey: ["vendor-orders"],
@@ -165,7 +164,10 @@ export default function VendorDashboard() {
 
   const createQuoteMutation = useMutation({
     mutationFn: ({ rfqId, quote }) => rfqAPI.createQuote(rfqId, quote).then((r) => r.data),
-    onSuccess: (data) => {
+    onSuccess: () => {
+    queryClient.invalidateQueries(["vendor-rfqs"]);
+    queryClient.invalidateQueries(["incoming-rfqs"]);
+    queryClient.invalidateQueries(["/dashboard/vendor-stats"]);
       toast({
         title: "Quote submitted",
         description: "Your quote has been sent to the buyer.",
@@ -214,12 +216,7 @@ export default function VendorDashboard() {
   }, [product]);
 
  useEffect(() => {
-    // 1️⃣ Connect socket when component mounts
-    if (!socket.connected) {
-      socket.connect();
-    }
-
-    // 2️⃣ When socket connects, join room
+    if (!socket.connected)  socket.connect();
     socket.on("connect", () => {
       console.log("🟢 Socket connected:", socket.id);
 
@@ -243,28 +240,59 @@ export default function VendorDashboard() {
       title: "New Negotiation",
       description: `${data.buyerName} started a negotiation for ${data.productName}`,
     });
-    // Optionally update state to show the negotiation in a list
+    queryClient.invalidateQueries(["/negotiations"]);
   });
 
-    // 4️⃣ Cleanup on unmount
+   socket.on("quoteAccepted", ({ quote, order }) => {
+    toast.success("🎉 Your quote was accepted!");
+       queryClient.setQueryData(["quotes"], (oldQuotes = []) =>
+        oldQuotes.map(q =>
+          q.id === quote.id
+            ? { ...q, status: "accepted" }
+            : { ...q, status: "rejected" } // auto-reject others
+        )
+      );
+
+      queryClient.setQueryData(["rfqs"], (oldRfqs = []) =>
+        oldRfqs.map(r =>
+          r.id === rfqId ? { ...r, status: "closed" } : r
+        )
+      );
+    });
+
+    socket.on("quoteRejected", ({ quote }) => {
+       toast.error("❌ Your quote was rejected");
+      queryClient.setQueryData(["quotes"], (oldQuotes = []) => {
+        return oldQuotes.map(q =>
+          q.id === quote.id ? { ...q, status: "rejected" } : q
+        );
+      });
+    });
+
     return () => {
       console.log("🔴 Disconnecting socket");
       socket.off("connect");
      socket.off("negotiation:new");
+      socket.off("quoteAccepted");
+      socket.off("quoteRejected");
       socket.disconnect();
     };
-  }, []);
+  }, [queryClient]);
 
-if (id) {
-  if (productLoading) return <p>Loading product...</p>;
-  if (!product) return <p>Product not found</p>;
+const activeNegotiations = negotiations?.filter(negotiation => {
+  return negotiation.isActive;
+});
 
-  return (
-    <div>
-      <NegotiationChat product={product} />
-    </div>
-  );
-}
+// if (id) {
+//   if (productLoading) return <p>Loading product...</p>;
+//   if (!product) return <p>Product not found</p>;
+
+//   return (
+//     <div>
+//       <NegotiationChat product={product} />
+//     </div>
+//   );
+// }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -556,12 +584,28 @@ if (id) {
                 ) : rfqsError ? (
                   <div className="text-red-500">Failed to load RFQs.</div>
                 ) : rfqs?.length ? (
-                  rfqs.map(rfq => (
-                    <div key={rfq.id} className="mb-4 p-4 bg-white rounded shadow">
-                      <h4 className="font-medium">{rfq.title}</h4>
-                      <p className="text-sm">{rfq.description}</p>
-                      <p className="text-xs text-gray-500">Status: {rfq.status}</p>
-                    </div>
+                  rfqs.filter(r => r.status !== "closed").map(rfq => (
+                     <Card key={rfq.id}>
+                        <CardHeader className="flex justify-between items-start">
+                          <div>
+                            <CardTitle>{rfq.title}</CardTitle>
+                            <p className="text-sm text-gray-500 mt-1">
+                              Quantity: {rfq.quantity} | Target Price: {rfq.targetPrice} | Deadline:{" "}
+                              {rfq.deadline ? new Date(rfq.deadline).toLocaleDateString() : "—"}
+                            </p>
+                          </div>
+                          <QuoteDialog
+                            rfq={rfq}
+                            onSubmit={(quotePayload) =>
+                              createQuoteMutation.mutate({ rfqId: rfq.id, quote: quotePayload })
+                            }
+                            disabled={createQuoteMutation.isPending}
+                          />
+                        </CardHeader>
+                        <CardContent>
+                          <p>{rfq.description}</p>
+                        </CardContent>
+                      </Card>
                   ))
                 ) : (
                   <div className="text-center py-8">
@@ -576,7 +620,7 @@ if (id) {
           <TabsContent value="incoming-rfqs">
             <Card>
               <CardHeader>
-                <CardTitle>IncomingRFQs</CardTitle>
+                <CardTitle>Your RFQs</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
@@ -665,8 +709,8 @@ if (id) {
                 <CardTitle>Active Negotiations</CardTitle>
               </CardHeader>
               <CardContent>
-                {negotiations.length > 0 ? (
-                  negotiations.map((n) => {
+                {activeNegotiations.length > 0 ? (
+                  activeNegotiations.map((n) => {
                     const lastMessage = n.messages?.[n.messages.length - 1]?.message || "No messages yet";
                     return (
                       <div key={n.id} className="p-3 border-b last:border-none flex justify-between items-center">
@@ -755,13 +799,24 @@ export function QuoteDialog({ rfq, onSubmit, disabled }) {
   const [deliveryTime, setDeliveryTime] = useState("");
   const [validUntil, setValidUntil] = useState("");
   const [notes, setNotes] = useState("");
+  const [productId, setProductId] = useState("");
+    const user = authManager.getUser();
 
-  const isValid = price && quantity;
+
+    const { data: products, isLoading: productsLoading } = useQuery({
+  queryKey: ['/api/vendors', user?.id, 'products'],
+  queryFn: () =>
+    productAPI.getProductsByVendor(user?.id).then(res => res.data),
+  enabled: !!user?.id,
+});
+
+const isValid = price && quantity  && productId;
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!isValid) return;
     const payload = {
+       productId,
       price: price.toString(),
       quantity: parseInt(quantity, 10),
       deliveryTime,
@@ -771,7 +826,7 @@ export function QuoteDialog({ rfq, onSubmit, disabled }) {
     onSubmit(payload);
   };
 
-  return (
+ return (
     <Dialog>
       <DialogTrigger asChild>
         <Button size="sm">Submit Quote</Button>
@@ -781,6 +836,27 @@ export function QuoteDialog({ rfq, onSubmit, disabled }) {
           <DialogTitle>Quote for "{rfq.title}"</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Product Selection */}
+          <div>
+            <Label>Select Product</Label>
+            <Select
+              onValueChange={(val) => setProductId(val)}
+              value={productId}
+              disabled={productsLoading}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Choose your product" />
+              </SelectTrigger>
+              <SelectContent>
+                {products.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           <div>
             <Label>Price</Label>
             <Input
@@ -792,6 +868,7 @@ export function QuoteDialog({ rfq, onSubmit, disabled }) {
               placeholder="e.g., 12.50"
             />
           </div>
+
           <div>
             <Label>Quantity</Label>
             <Input
@@ -802,6 +879,7 @@ export function QuoteDialog({ rfq, onSubmit, disabled }) {
               placeholder="e.g., 100"
             />
           </div>
+
           <div>
             <Label>Delivery Time</Label>
             <Input
@@ -810,6 +888,7 @@ export function QuoteDialog({ rfq, onSubmit, disabled }) {
               placeholder="e.g., 3 weeks"
             />
           </div>
+
           <div>
             <Label>Valid Until (optional)</Label>
             <Input
@@ -818,6 +897,7 @@ export function QuoteDialog({ rfq, onSubmit, disabled }) {
               onChange={(e) => setValidUntil(e.target.value)}
             />
           </div>
+
           <div>
             <Label>Notes</Label>
             <Input
@@ -826,6 +906,7 @@ export function QuoteDialog({ rfq, onSubmit, disabled }) {
               placeholder="Any extra info"
             />
           </div>
+
           <div className="flex justify-end gap-2">
             <Button type="submit" disabled={!isValid || disabled}>
               {disabled ? "Submitting..." : "Submit Quote"}

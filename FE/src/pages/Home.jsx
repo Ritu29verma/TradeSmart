@@ -3,7 +3,16 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { productAPI, dashboardAPI } from "@/lib/api";
+import { Skeleton } from "@/components/ui/skeleton";
+import ProductCard from "@/components/ProductCard";
+import { useQuery } from "@tanstack/react-query";
 import { 
+   Users,
+   Package,
+  ShoppingCart,
+  DollarSign,
+  Plus,
   Brain, 
   TrendingUp, 
   MessageSquare, 
@@ -14,14 +23,20 @@ import {
   ArrowRight,
   CheckCircle
 } from "lucide-react";
+import { authManager } from "@/lib/auth";
 
 export default function Home() {
-  const stats = [
-    { label: "Active Vendors", value: "2,500+" },
-    { label: "Products", value: "50K+" },
-    { label: "Transactions", value: "$2.5M+" },
-    { label: "Avg. Savings", value: "15%" },
-  ];
+   const user = authManager.getUser();
+
+  //  const { data: users, isLoading: isUsersLoading, isError: isUsersError, error: usersError } = useQuery({
+  //     queryKey: ['users'],
+  //     queryFn: () => userAPI.getUsers().then(res => res.data),
+  //   });
+
+      const { data: stats, isLoading: statsLoading } = useQuery({
+    queryKey: ["/api/dashboard/stats"],
+    // enabled: !!user && user.role === "admin",
+  });
 
   const features = [
     {
@@ -44,49 +59,61 @@ export default function Home() {
     },
   ];
 
-  const products = [
-    {
-      id: 1,
-      name: "CNC Precision Machine",
-      price: 15500,
-      originalPrice: 18000,
-      image: "https://images.unsplash.com/photo-1518640467707-6811f4a6ab73?w=400&h=300&fit=crop",
-      category: "Industrial Equipment",
-      vendor: "TechCorp Solutions",
-      rating: 4.8,
-      trending: true,
+  // const products = [
+  //   {
+  //     id: 1,
+  //     name: "CNC Precision Machine",
+  //     price: 15500,
+  //     originalPrice: 18000,
+  //     image: "https://images.unsplash.com/photo-1518640467707-6811f4a6ab73?w=400&h=300&fit=crop",
+  //     category: "Industrial Equipment",
+  //     vendor: "TechCorp Solutions",
+  //     rating: 4.8,
+  //     trending: true,
+  //   },
+  //   {
+  //     id: 2,
+  //     name: "Industrial IoT Sensors",
+  //     price: 285,
+  //     image: "https://images.unsplash.com/photo-1518640467707-6811f4a6ab73?w=400&h=300&fit=crop",
+  //     category: "Electronics",
+  //     vendor: "ElectroMax Inc.",
+  //     rating: 4.9,
+  //     aiOptimized: true,
+  //   },
+  //   {
+  //     id: 3,
+  //     name: "Safety Equipment Bundle",
+  //     price: 125,
+  //     originalPrice: 153,
+  //     image: "https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=400&h=300&fit=crop",
+  //     category: "Safety & Security",
+  //     vendor: "SafeGuard Co.",
+  //     rating: 4.7,
+  //   },
+  //   {
+  //     id: 4,
+  //     name: "Smart Building Control",
+  //     price: 8950,
+  //     image: "https://images.unsplash.com/photo-1560472354-b33ff0c44a43?w=400&h=300&fit=crop",
+  //     category: "Automation",
+  //     vendor: "AutoTech Systems",
+  //     rating: 4.6,
+  //     trending: true,
+  //   },
+  // ];
+
+    const {data: products,isLoading: productsLoading, error: productError,} = useQuery({
+    queryKey: ["products"],
+    queryFn: () => productAPI.getProducts().then((res) => res.data),
+    // keepPreviousData: true,
+    onSuccess: (data) => {
+      console.log("✅ Products fetched:", data);
     },
-    {
-      id: 2,
-      name: "Industrial IoT Sensors",
-      price: 285,
-      image: "https://images.unsplash.com/photo-1518640467707-6811f4a6ab73?w=400&h=300&fit=crop",
-      category: "Electronics",
-      vendor: "ElectroMax Inc.",
-      rating: 4.9,
-      aiOptimized: true,
+    onError: (err) => {
+      console.error("❌ Error fetching products:", err);
     },
-    {
-      id: 3,
-      name: "Safety Equipment Bundle",
-      price: 125,
-      originalPrice: 153,
-      image: "https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=400&h=300&fit=crop",
-      category: "Safety & Security",
-      vendor: "SafeGuard Co.",
-      rating: 4.7,
-    },
-    {
-      id: 4,
-      name: "Smart Building Control",
-      price: 8950,
-      image: "https://images.unsplash.com/photo-1560472354-b33ff0c44a43?w=400&h=300&fit=crop",
-      category: "Automation",
-      vendor: "AutoTech Systems",
-      rating: 4.6,
-      trending: true,
-    },
-  ];
+  });
 
   return (
     <div className="min-h-screen">
@@ -115,14 +142,73 @@ export default function Home() {
             </div>
 
             {/* Stats */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-8 max-w-4xl mx-auto">
-              {stats.map((stat, index) => (
-                <div key={index} className="text-center">
-                  <div className="text-3xl font-bold text-gray-900">{stat.value}</div>
-                  <div className="text-gray-600">{stat.label}</div>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center">
+                <Users className="h-8 w-8 text-blue-600" />
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-600">Total Users</p>
+                  {statsLoading ? (
+                    <Skeleton className="h-8 w-16" />
+                  ) : (
+                    <p className="text-2xl font-bold text-gray-900">{stats?.totalUsers - 1 || 0}</p>
+                  )}
                 </div>
-              ))}
-            </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center">
+                <Package className="h-8 w-8 text-green-600" />
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-600">Total Products</p>
+                  {statsLoading ? (
+                    <Skeleton className="h-8 w-16" />
+                  ) : (
+                    <p className="text-2xl font-bold text-gray-900">{stats?.totalProducts || 0}</p>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center">
+                <ShoppingCart className="h-8 w-8 text-purple-600" />
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-600">Total Orders</p>
+                  {statsLoading ? (
+                    <Skeleton className="h-8 w-16" />
+                  ) : (
+                    <p className="text-2xl font-bold text-gray-900">{stats?.totalOrders || 0}</p>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center">
+                <DollarSign className="h-8 w-8 text-amber-600" />
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-600">Total Revenue</p>
+                  {statsLoading ? (
+                    <Skeleton className="h-8 w-16" />
+                  ) : (
+                    <p className="text-2xl font-bold text-gray-900">
+                      ${parseFloat(stats?.totalRevenue || 0).toLocaleString()}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
           </div>
         </div>
       </section>
@@ -190,74 +276,63 @@ export default function Home() {
       </section>
 
       {/* Products Section */}
-      <section className="py-16 bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between mb-8">
-            <div>
-              <h2 className="text-3xl font-bold text-gray-900">Featured Products</h2>
-              <p className="text-gray-600 mt-2">Discover quality B2B products from verified vendors</p>
-            </div>
-            <Button asChild>
-              <Link href="/marketplace">View All Products</Link>
-            </Button>
-          </div>
+     <section className="py-16 bg-white">
+  <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div className="flex items-center justify-between mb-8">
+      <div>
+        <h2 className="text-3xl font-bold text-gray-900">Featured Products</h2>
+        <p className="text-gray-600 mt-2">
+          Discover quality B2B products from verified vendors
+        </p>
+      </div>
+      <Button asChild>
+        <Link href="/marketplace">View All Products</Link>
+      </Button>
+    </div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {products.map((product) => (
-              <Card key={product.id} className="group hover:shadow-lg transition-all duration-300 overflow-hidden">
-                <div className="aspect-w-16 aspect-h-12 bg-gray-200 overflow-hidden">
-                  <img 
-                    src={product.image} 
-                    alt={product.name}
-                    className="w-full h-48 object-cover group-hover:scale-105 transition-transform duration-300"
-                  />
-                </div>
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <Badge variant="secondary" className="text-xs">
-                      {product.category}
-                    </Badge>
-                    {product.trending && (
-                      <Badge className="text-xs bg-blue-100 text-blue-800">Trending</Badge>
-                    )}
-                    {product.aiOptimized && (
-                      <Badge className="text-xs bg-green-100 text-green-800">AI Optimized</Badge>
-                    )}
-                  </div>
-                  
-                  <h3 className="font-semibold text-gray-900 mb-2 line-clamp-2">{product.name}</h3>
-                  
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center space-x-2">
-                      <span className="text-lg font-bold text-gray-900">${product.price.toLocaleString()}</span>
-                      {product.originalPrice && (
-                        <span className="text-sm text-gray-500 line-through">
-                          ${product.originalPrice.toLocaleString()}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center space-x-1">
-                      <Star className="w-4 h-4 text-yellow-400 fill-current" />
-                      <span className="text-sm text-gray-600">{product.rating}</span>
-                    </div>
-                  </div>
-                  
-                  <div className="text-sm text-gray-600 mb-3">{product.vendor}</div>
-                  
-                  <div className="flex space-x-2">
-                    <Button size="sm" className="flex-1">
-                      Get Quote
-                    </Button>
-                    <Button variant="outline" size="sm">
-                      <MessageSquare className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+    {/* ✅ Loading State */}
+    {productsLoading ? (
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <Card key={i}>
+            <Skeleton className="h-48 w-full" />
+            <CardContent className="p-4">
+              <Skeleton className="h-4 w-full mb-2" />
+              <Skeleton className="h-4 w-3/4 mb-2" />
+              <Skeleton className="h-6 w-1/2" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    ) : productError ? (
+      /* ✅ Error State */
+      <p className="text-red-500">Failed to load products.</p>
+    ) : products?.length === 0 ? (
+      /* ✅ Empty State */
+      <Card>
+        <CardContent className="p-12 text-center">
+          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Search className="w-8 h-8 text-gray-400" />
           </div>
-        </div>
-      </section>
+          <h3 className="text-lg font-medium text-gray-900 mb-2">
+            No products found
+          </h3>
+          <p className="text-gray-600">
+            Check back later — new products are being added.
+          </p>
+        </CardContent>
+      </Card>
+    ) : (
+      /* ✅ Products Grid */
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
+  {products?.slice(0, 5).map((product) => (
+    <ProductCard key={product.id} product={product} />
+  ))}
+</div>
+    )}
+  </div>
+</section>
+
 
       {/* AI Negotiation Demo */}
       <section className="py-16 bg-gray-50">

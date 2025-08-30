@@ -1,0 +1,40 @@
+name: Backend CI/CD
+
+on:
+  push:
+    paths:
+      - 'BE/**'
+    branches:
+      - main
+
+jobs:
+  backend-ci-cd:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: BE
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run Jest tests
+        run: npm run test
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel
+
+      - name: Deploy Backend (only if tests pass)
+        run: vercel deploy --prod --cwd=backend \
+          --token=${{ secrets.VERCEL_TOKEN }} \
+          --scope=${{ secrets.VERCEL_ORG_ID }} \
+          --project=${{ secrets.VERCEL_PROJECT_ID_BE }} \
+          --yes --confirm

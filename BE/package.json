@@ -11,7 +11,10 @@
   },
   "scripts": {
     "dev": "nodemon index.js",
-    "test": "cross-env NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.js"
+    "test": "cross-env NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.js",
+    "db:generate" : "drizzle-kit generate",
+    "db:migrate" : "drizzle-kit migrate",
+    "db:studio" : "drizzle-kit studio"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
