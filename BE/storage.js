@@ -1,4 +1,3 @@
-// import { db } from "./db.js";
 import { initDb, getDb } from './db.js';
 
 await initDb();
