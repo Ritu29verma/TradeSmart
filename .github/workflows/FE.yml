@@ -6,6 +6,7 @@ on:
       - 'FE/**'
     branches:
       - main
+
   pull_request:
     paths:
       - 'FE/**'
@@ -37,7 +38,17 @@ jobs:
       - name: Install Vercel CLI
         run: npm install -g vercel
 
-      - name: Deploy Frontend (only on push to main after successful build)
+      # 🚀 Preview Deployment for PRs
+      - name: Deploy Frontend Preview (PR)
+        if: github.event_name == 'pull_request'
+        run: vercel deploy \
+          --token=${{ secrets.VERCEL_TOKEN }} \
+          --scope=${{ secrets.VERCEL_ORG_ID }} \
+          --project=${{ secrets.VERCEL_PROJECT_ID_FE }} \
+          --yes --confirm
+
+      # 🚀 Production Deployment only on push to main
+      - name: Deploy Frontend Production (main)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: vercel deploy --prod \
           --token=${{ secrets.VERCEL_TOKEN }} \
