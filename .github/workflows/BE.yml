@@ -42,17 +42,10 @@ jobs:
       # 🚀 Preview Deployments for PRs
       - name: Deploy Backend Preview (PR)
         if: github.event_name == 'pull_request'
-        run: vercel deploy --yes --confirm \
-            --token ${{ secrets.VERCEL_TOKEN }} \
-            --scope ritu1298verma-8387 \
-            --project ${{ secrets.VERCEL_PROJECT_ID_BE }} 
+        run: vercel deploy --yes --confirm --token ${{ secrets.VERCEL_TOKEN }} --scope ritu1298verma-8387 --project ${{ secrets.VERCEL_PROJECT_ID_BE }} 
 
       # 🚀 Production Deployment only on push to main
       - name: Deploy Backend Production (main)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: |
-          vercel deploy --prod --yes --confirm \
-            --token ${{ secrets.VERCEL_TOKEN }} \
-            --scope ritu1298verma-8387 \
-            --project ${{ secrets.VERCEL_PROJECT_ID_BE }} 
+        run: vercel deploy --prod --yes --confirm --token ${{ secrets.VERCEL_TOKEN }} --scope ritu1298verma-8387 --project ${{ secrets.VERCEL_PROJECT_ID_BE }} 
       
