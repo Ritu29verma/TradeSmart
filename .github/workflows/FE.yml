@@ -42,9 +42,9 @@ jobs:
       # 🚀 Preview Deployment for PRs
       - name: Deploy Frontend Preview (PR)
         if: github.event_name == 'pull_request'
-        run: vercel deploy --yes --confirm --token ${{ secrets.VERCEL_TOKEN }} --scope ritu1298verma-8387 --project ${{ secrets.VERCEL_PROJECT_ID_FE }} 
+        run: vercel deploy --yes --confirm --token ${{ secrets.VERCEL_TOKEN }} --cwd FE --project ${{ secrets.VERCEL_PROJECT_ID_FE }} 
 
       # 🚀 Production Deployment only on push to main
       - name: Deploy Frontend Production (main)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: vercel deploy --prod --yes --confirm --token ${{ secrets.VERCEL_TOKEN }} --scope ritu1298verma-8387 --project ${{ secrets.VERCEL_PROJECT_ID_FE }}
+        run: vercel deploy --prod --yes --confirm --token ${{ secrets.VERCEL_TOKEN }} --cwd FE --project ${{ secrets.VERCEL_PROJECT_ID_FE }}
