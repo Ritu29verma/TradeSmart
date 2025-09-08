@@ -50,6 +50,6 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: vercel deploy --prod \
             --token=${{ secrets.VERCEL_TOKEN }} \
-            --scope=${{ secrets.VERCEL_ORG_ID }} \
+            --scope=ritu1298verma-8387 \
             --project=${{ secrets.VERCEL_PROJECT_ID_BE }} \
             --yes --confirm
