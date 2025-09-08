@@ -37,20 +37,24 @@ jobs:
         run: npm install -g vercel
 
       - name: Test Vercel Auth
-        run: vercel whoami --token ${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: vercel whoami
 
       # 🚀 Preview Deployment for PRs
       - name: Deploy Frontend Preview (PR)
         if: github.event_name == 'pull_request'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: vercel deploy --yes --confirm \
-          --token ${{ secrets.VERCEL_TOKEN }} \
           --scope ritu1298verma-8387 \
           --project ${{ secrets.VERCEL_PROJECT_ID_FE }} 
 
       # 🚀 Production Deployment only on push to main
       - name: Deploy Frontend Production (main)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: vercel deploy --prod --yes --confirm \
-          --token ${{ secrets.VERCEL_TOKEN }} \
           --scope ritu1298verma-8387 \
           --project ${{ secrets.VERCEL_PROJECT_ID_FE }}
