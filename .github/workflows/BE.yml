@@ -18,9 +18,6 @@ jobs:
       run:
         working-directory: BE
 
-    env:
-      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -37,26 +34,24 @@ jobs:
         run: npm run test
 
       - name: Install Vercel CLI
-        run: npm install -g vercel
+        run: npm install -g vercel@46.1.1 
 
       - name: Test Vercel Auth
-        run: vercel whoami
+        run: vercel whoami --token ${{ secrets.VERCEL_TOKEN }}
 
       # 🚀 Preview Deployments for PRs
       - name: Deploy Backend Preview (PR)
         if: github.event_name == 'pull_request'
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: vercel deploy --yes --confirm \
+            --token ${{ secrets.VERCEL_TOKEN }} \
             --scope ritu1298verma-8387 \
             --project ${{ secrets.VERCEL_PROJECT_ID_BE }} 
 
       # 🚀 Production Deployment only on push to main
       - name: Deploy Backend Production (main)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: vercel deploy --prod --yes --confirm \
+            --token ${{ secrets.VERCEL_TOKEN }} \
             --scope ritu1298verma-8387 \
             --project ${{ secrets.VERCEL_PROJECT_ID_BE }} 
       
